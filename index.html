@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LEDGER</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+  <script>
+    // ES Modules não carregam via file:// (restrição de segurança de todo navegador moderno,
+    // não um bug deste app) — avisa quem abrir o arquivo direto em vez de usar o servidor local.
+    if (location.protocol === 'file:') {
+      document.write(
+        '<div style="background:#fee2e2;color:#991b1b;padding:16px 24px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;">' +
+        '<strong>Este arquivo precisa ser aberto por um servidor local, não direto pelo file://.</strong><br>' +
+        'No terminal, dentro da pasta do projeto, rode <code>npm start</code> e depois abra ' +
+        '<code>http://localhost:5173</code> no navegador.' +
+        '</div>'
+      );
+    }
+  </script>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__brand">
+        <span class="app-header__logo">LEDGER</span>
+        <span class="app-header__tagline" data-i18n="app.tagline"></span>
+      </div>
+      <div class="app-header__status">
+        <span id="app-state-badge" class="badge badge--state"></span>
+        <span id="connectivity-badge" class="badge badge--connectivity"></span>
+        <label class="language-switcher">
+          <span data-i18n="language.label"></span>
+          <select id="language-switcher"></select>
+        </label>
+      </div>
+    </header>
+    <div class="app-body">
+      <nav id="app-nav" class="app-nav">
+        <a href="#/dashboard" data-route="/dashboard" data-i18n="nav.dashboard"></a>
+        <a href="#/accounts" data-route="/accounts" data-i18n="nav.accounts"></a>
+        <a href="#/transactions" data-route="/transactions" data-i18n="nav.transactions"></a>
+        <a href="#/categories" data-route="/categories" data-i18n="nav.categories"></a>
+        <a href="#/credit-cards" data-route="/credit-cards" data-i18n="nav.creditCards"></a>
+        <a href="#/invoices" data-route="/invoices" data-i18n="nav.invoices"></a>
+        <a href="#/transfers" data-route="/transfers" data-i18n="nav.transfers"></a>
+        <a href="#/reports" data-route="/reports" data-i18n="nav.reports"></a>
+        <a href="#/settings" data-route="/settings" data-i18n="nav.settings"></a>
+      </nav>
+      <main id="app-main" class="app-main"></main>
+    </div>
+  </div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

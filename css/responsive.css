@@ -1,0 +1,34 @@
+/* O menu de navegação permanece lateral (à esquerda) em qualquer largura de tela,
+   por preferência explícita do usuário; apenas encolhe em telas estreitas. */
+@media (max-width: 768px) {
+  .app-header {
+    flex-wrap: wrap;
+  }
+
+  .app-nav {
+    width: 170px;
+  }
+
+  .app-main {
+    padding: var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header__tagline {
+    display: none;
+  }
+
+  .language-switcher span {
+    display: none;
+  }
+
+  .app-nav {
+    width: 128px;
+    font-size: 0.82rem;
+  }
+
+  .app-nav a {
+    padding: var(--space-2) var(--space-1);
+  }
+}

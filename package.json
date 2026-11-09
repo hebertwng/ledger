@@ -1,0 +1,11 @@
+{
+  "name": "ledger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema web de controle financeiro pessoal, familiar e empresarial (local-first, com sincronizacao opcional via Firebase).",
+  "scripts": {
+    "start": "node tools/dev-server.mjs",
+    "test": "node --test tests/*.test.js"
+  }
+}

@@ -1,0 +1,79 @@
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.app-header__logo {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+}
+
+.app-header__tagline {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.app-header__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.app-nav {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.app-nav a {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.app-nav a:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.app-nav a.is-active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.app-main {
+  flex: 1;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
