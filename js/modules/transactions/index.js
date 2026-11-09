@@ -24,9 +24,18 @@ import { todayISODate, formatDateDisplay, formatReferenceMonth, currentWeekRange
 import { listInvoices } from '../../services/invoiceRepository.js';
 import { isRequired, isValidISODate } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
+import { navigateTo } from '../../core/router.js';
 
 let formState = null;
 let scopeState = null;
+let keydownHandler = null;
+
+// Permite que outra tela (ex.: os atalhos de "Novo lançamento" do Painel) abra esta tela já
+// com o formulário de criação pronto, em vez de só navegar para a lista.
+export function openCreateForm(kind) {
+  formState = { mode: 'create', kind };
+}
+
 let filterState = {
   kind: '',
   accountId: '',
@@ -76,10 +85,9 @@ export async function render(container) {
         <button type="button" id="transactions-new-button" class="button button--primary" ${accounts.length === 0 ? 'disabled' : ''}>${t('transactions.newButton')}</button>
       </div>
       ${accounts.length === 0 ? `<div class="form-note"><p>${t('transactions.noAccountsWarning')}</p></div>` : ''}
-      <div id="transactions-form-slot"></div>
-      <div id="transactions-scope-slot"></div>
       <div id="transactions-filters-slot"></div>
       <div id="transactions-results-slot"></div>
+      <div id="transactions-modal-slot"></div>
     </section>
   `;
 
@@ -93,9 +101,44 @@ export async function render(container) {
 
   renderFiltersBar(context);
   updateResultsSlot(context);
+  attachKeyboardShortcuts(context);
 
   if (formState) renderForm(context);
   if (scopeState) renderScopeChooser(context);
+}
+
+// Atalhos D/R/T (nova despesa/receita/transferência), e Esc para
+// fechar o modal aberto — só reagem enquanto esta tela está ativa (confere a rota a cada
+// tecla, já que o listener fica em document e o router não tem um "desmontar" explícito).
+function attachKeyboardShortcuts(context) {
+  if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
+  keydownHandler = (event) => {
+    if (window.location.hash.replace(/^#/, '') !== '/transactions') return;
+
+    if (event.key === 'Escape' && (formState || scopeState)) {
+      formState = null;
+      scopeState = null;
+      render(context.container);
+      return;
+    }
+
+    if (formState || scopeState) return;
+    const target = event.target;
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'd') {
+      formState = { mode: 'create', kind: 'expense' };
+      renderForm(context);
+    } else if (key === 'r') {
+      formState = { mode: 'create', kind: 'income' };
+      renderForm(context);
+    } else if (key === 't') {
+      navigateTo('/transfers');
+    }
+  };
+  document.addEventListener('keydown', keydownHandler);
 }
 
 function resolveEffectiveFilters() {
@@ -241,13 +284,16 @@ function updateResultsSlot(context) {
   const filtered = filterTransactions(context.transactions, resolveEffectiveFilters());
   const sorted = sortTransactions(filtered, filterState.sortBy);
 
-  slot.innerHTML = sorted.length === 0 ? `<div class="empty-state"><p>${t('transactions.emptyState')}</p></div>` : tableHtml(sorted, context);
+  slot.innerHTML = sorted.length === 0 ? `<div class="empty-state"><p>${t('transactions.emptyState')}</p></div>` : listHtml(sorted, context);
 
   for (const button of slot.querySelectorAll('[data-edit-id]')) {
     button.addEventListener('click', () => startEdit(context, button.dataset.editId));
   }
   for (const button of slot.querySelectorAll('[data-delete-id]')) {
     button.addEventListener('click', () => startDelete(context, button.dataset.deleteId));
+  }
+  for (const button of slot.querySelectorAll('[data-toggle-paid-id]')) {
+    button.addEventListener('click', () => toggleQuickPay(context, button.dataset.togglePaidId));
   }
   for (const button of slot.querySelectorAll('[data-pause-series]')) {
     button.addEventListener('click', async () => {
@@ -303,50 +349,94 @@ function paymentTargetLabel(transaction, context) {
   return account ? escapeHtml(account.name) : '-';
 }
 
-function tableHtml(transactions, context) {
+const SETTLED_STATUSES_SET = new Set(['paid', 'received']);
+
+// Cor determinística a partir do nome da categoria — usada quando a categoria não tem uma
+// cor própria definida (ainda não editável na tela de Categorias), só para dar variedade
+// visual aos ícones da lista.
+function colorFromText(text) {
+  if (!text) return '#94a3b8';
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) hash = text.charCodeAt(index) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 55%, 45%)`;
+}
+
+function categoryBadgeHtml(category) {
+  const letter = category?.name ? category.name.trim().charAt(0).toUpperCase() : '•';
+  const color = category?.color || colorFromText(category?.name || '');
+  return `<div class="tx-row__icon" style="background:${escapeHtml(color)}">${escapeHtml(letter)}</div>`;
+}
+
+function dateHeaderLabel(isoDate, locale) {
+  return isoDate === todayISODate() ? t('transactions.dateGroup.today') : formatDateDisplay(isoDate, locale);
+}
+
+function rowHtml(transaction, context) {
   const { categoriesById, seriesById } = context;
   const locale = getLocale();
-
-  const rows = transactions
-    .map((transaction) => {
-      const category = transaction.categoryId ? categoriesById.get(transaction.categoryId) : null;
-      return `
-        <tr>
-          <td>${formatDateDisplay(transaction.date, locale)}</td>
-          <td>${escapeHtml(transaction.description || '')} ${seriesBadgeHtml(transaction, seriesById)}</td>
-          <td>${category ? escapeHtml(category.name) : '-'}</td>
-          <td>${paymentTargetLabel(transaction, context)}</td>
-          <td class="table__value">${centsToDisplay(transaction.amountCents, locale)}</td>
-          <td>${t(`transactions.status.${transaction.status}`)}</td>
-          <td class="table__actions">
-            <button type="button" class="link-button" data-edit-id="${transaction.id}">${t('common.edit')}</button>
-            <button type="button" class="link-button" data-delete-id="${transaction.id}">${t('common.delete')}</button>
-            ${seriesActionsHtml(transaction, seriesById)}
-          </td>
-        </tr>
-      `;
-    })
-    .join('');
+  const category = transaction.categoryId ? categoriesById.get(transaction.categoryId) : null;
+  const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
+  const amountClass = transaction.amountCents < 0 ? 'tx-row__amount--expense' : 'tx-row__amount--income';
 
   return `
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>${t('transactions.column.date')}</th>
-          <th>${t('transactions.column.description')}</th>
-          <th>${t('transactions.column.category')}</th>
-          <th>${t('transactions.column.account')}</th>
-          <th>${t('transactions.column.amount')}</th>
-          <th>${t('transactions.column.status')}</th>
-          <th>${t('common.actions')}</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <article class="tx-row">
+      ${categoryBadgeHtml(category)}
+      <div class="tx-row__main">
+        <p class="tx-row__title">${escapeHtml(transaction.description || '')} ${seriesBadgeHtml(transaction, seriesById)}</p>
+        <p class="tx-row__subtitle">${category ? escapeHtml(category.name) : t('transactions.form.categoryNone')} · ${paymentTargetLabel(transaction, context)} · ${t(`transactions.status.${transaction.status}`)}</p>
+      </div>
+      <div class="tx-row__amount ${amountClass}">${centsToDisplay(transaction.amountCents, locale)}</div>
+      <div class="tx-row__actions">
+        <button type="button" class="link-button" data-toggle-paid-id="${transaction.id}" title="${isSettled ? t('transactions.quickAction.markPending') : t('transactions.quickAction.markPaid')}">${isSettled ? '↺' : '✓'}</button>
+        <button type="button" class="link-button" data-edit-id="${transaction.id}">${t('common.edit')}</button>
+        <button type="button" class="link-button" data-delete-id="${transaction.id}">${t('common.delete')}</button>
+        ${seriesActionsHtml(transaction, seriesById)}
+      </div>
+    </article>
   `;
 }
 
-const SETTLED_STATUSES = new Set(['paid', 'received']);
+// Agrupar por data só faz sentido quando a lista está ordenada por data (o padrão); com
+// ordenação por valor/descrição os grupos ficariam espalhados e fora de ordem, então nesses
+// casos a lista aparece sem cabeçalhos de data.
+function listHtml(transactions, context) {
+  const locale = getLocale();
+  if (filterState.sortBy !== 'date') {
+    return `<div class="tx-list">${transactions.map((transaction) => rowHtml(transaction, context)).join('')}</div>`;
+  }
+
+  const groups = [];
+  for (const transaction of transactions) {
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.date === transaction.date) lastGroup.items.push(transaction);
+    else groups.push({ date: transaction.date, items: [transaction] });
+  }
+
+  return `
+    <div class="tx-list">
+      ${groups
+        .map(
+          (group) => `
+            <h3 class="tx-date-header">${dateHeaderLabel(group.date, locale)}</h3>
+            ${group.items.map((transaction) => rowHtml(transaction, context)).join('')}
+          `
+        )
+        .join('')}
+    </div>
+  `;
+}
+
+async function toggleQuickPay(context, transactionId) {
+  const transaction = context.transactions.find((item) => item.id === transactionId);
+  if (SETTLED_STATUSES_SET.has(transaction.status)) {
+    if (!window.confirm(t('transactions.confirmEditPaid'))) return;
+    await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: 'pending' }, { scope: 'only', includePaid: true });
+  } else {
+    const nextStatus = transaction.kind === 'income' ? 'received' : 'paid';
+    await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: nextStatus }, { scope: 'only', includePaid: false });
+  }
+  render(context.container);
+}
 
 function startEdit(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
@@ -358,7 +448,7 @@ function startEdit(context, transactionId) {
   // Lançamento avulso já pago/recebido: preservado por padrão (seção 11/12), mas o usuário
   // pode confirmar explicitamente que quer editá-lo mesmo assim.
   let includePaid = false;
-  if (SETTLED_STATUSES.has(transaction.status)) {
+  if (SETTLED_STATUSES_SET.has(transaction.status)) {
     if (!window.confirm(t('transactions.confirmEditPaid'))) return;
     includePaid = true;
   }
@@ -373,17 +463,18 @@ function startDelete(context, transactionId) {
     renderScopeChooser(context);
     return;
   }
-  const isSettled = SETTLED_STATUSES.has(transaction.status);
+  const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
   if (!window.confirm(isSettled ? t('transactions.confirmDeletePaid') : t('transactions.deleteConfirm'))) return;
   deleteTransactionScoped(context.activeSpace.id, transaction.id, { scope: 'only', includePaid: isSettled }).then(() => render(context.container));
 }
 
 function renderScopeChooser(context) {
-  const slot = context.container.querySelector('#transactions-scope-slot');
+  const slot = context.container.querySelector('#transactions-modal-slot');
   const { transaction, action } = scopeState;
 
   slot.innerHTML = `
-    <div class="form-note">
+    <div class="modal-overlay" id="transactions-modal-overlay">
+    <div class="form-note modal-dialog">
       <p><strong>${t('transactions.scope.title')}</strong></p>
       <div class="form-field">
         <label><input type="radio" name="scope" value="only" checked /> ${t('transactions.scope.only')}</label>
@@ -402,11 +493,19 @@ function renderScopeChooser(context) {
         <button type="button" id="scope-cancel" class="button">${t('common.cancel')}</button>
       </div>
     </div>
+    </div>
   `;
 
   slot.querySelector('#scope-cancel').addEventListener('click', () => {
     scopeState = null;
     render(context.container);
+  });
+
+  slot.querySelector('#transactions-modal-overlay').addEventListener('click', (event) => {
+    if (event.target.id === 'transactions-modal-overlay') {
+      scopeState = null;
+      render(context.container);
+    }
   });
 
   slot.querySelector('#scope-continue').addEventListener('click', async () => {
@@ -429,7 +528,7 @@ function renderScopeChooser(context) {
 }
 
 function renderForm(context) {
-  const slot = context.container.querySelector('#transactions-form-slot');
+  const slot = context.container.querySelector('#transactions-modal-slot');
   const isEdit = formState.mode === 'edit';
   const transaction = formState.transaction;
   const { accounts, categories, creditCards, creditCardsById } = context;
@@ -445,13 +544,14 @@ function renderForm(context) {
       .join('');
 
   slot.innerHTML = `
-    <form id="transaction-form" class="form-card">
+    <div class="modal-overlay" id="transactions-modal-overlay">
+    <form id="transaction-form" class="form-card modal-dialog">
       <h2>${isEdit ? t('transactions.form.titleEdit') : t('transactions.form.titleCreate')}</h2>
       <div class="form-field">
         <label for="tx-kind">${t('transactions.form.kind')}</label>
         <select id="tx-kind" name="kind" ${isEdit || paymentMethod === 'creditCard' ? 'disabled' : ''}>
-          <option value="expense" ${(isEdit ? transaction.kind : 'expense') === 'expense' ? 'selected' : ''}>${t('transactions.kind.expense')}</option>
-          <option value="income" ${paymentMethod === 'creditCard' ? 'disabled' : ''}>${t('transactions.kind.income')}</option>
+          <option value="expense" ${(isEdit ? transaction.kind : formState.kind || 'expense') === 'expense' ? 'selected' : ''}>${t('transactions.kind.expense')}</option>
+          <option value="income" ${!isEdit && formState.kind === 'income' ? 'selected' : ''} ${paymentMethod === 'creditCard' ? 'disabled' : ''}>${t('transactions.kind.income')}</option>
         </select>
       </div>
       ${
@@ -566,6 +666,7 @@ function renderForm(context) {
         <button type="button" id="tx-form-cancel" class="button">${t('common.cancel')}</button>
       </div>
     </form>
+    </div>
   `;
 
   const kindSelect = slot.querySelector('#tx-kind');
@@ -595,6 +696,13 @@ function renderForm(context) {
   slot.querySelector('#tx-form-cancel').addEventListener('click', () => {
     formState = null;
     render(context.container);
+  });
+
+  slot.querySelector('#transactions-modal-overlay').addEventListener('click', (event) => {
+    if (event.target.id === 'transactions-modal-overlay') {
+      formState = null;
+      render(context.container);
+    }
   });
 
   slot.querySelector('#transaction-form').addEventListener('submit', async (event) => {

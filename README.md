@@ -41,6 +41,30 @@ verdade, o que exigiria uma biblioteca adicional).
 Compartilhamento (múltiplos espaços/participantes) ainda não está implementado — a tela de
 Configurações indica em qual etapa chega.
 
+### Melhorias de usabilidade
+
+Melhorias de usabilidade aplicadas ao LEDGER:
+
+- **Saldo confirmado vs. previsto**: o saldo das contas (e do Dashboard) agora distingue o que já
+  foi pago/recebido do que ainda está pendente, em vez de misturar os dois em um único número.
+- **Limite de gastos**: orçamento mensal por categoria, com barra de progresso e aviso ao
+  aproximar-se do limite (tela nova, acessível pelo menu).
+- **Painel**: saudação e botões rápidos de Nova despesa/receita/transferência logo no topo.
+- **Menu lateral agrupado**: telas de uso frequente (Painel, Lançamentos, Transferências,
+  Faturas, Limite de gastos, Relatórios) separadas das telas de cadastro/configuração (Contas,
+  Cartões, Categorias, Configurações) — continua fixo à esquerda em qualquer largura de tela.
+- **Lançamentos em lista agrupada por data** (com rótulo "Hoje"), no lugar da tabela crua —
+  cada lançamento mostra um ícone colorido, categoria/conta/status como subtítulo, e um botão de
+  marcar como pago/recebido direto na linha, sem precisar abrir o formulário.
+- **Criar/editar lançamento em modal** (sobreposto, fecha com Esc ou clicando fora) em vez de
+  empurrar a lista para baixo.
+- **Atalhos de teclado** `D`/`R`/`T` para nova despesa/receita/transferência, quando o foco não
+  está em um campo de formulário.
+
+Os ícones de bancos/cartões ficam em `assets/icons/institutions/` e servem só para a
+lista de instituições, não para a identidade visual do app; os badges de categoria usam, por
+enquanto, a inicial da categoria sobre uma cor gerada a partir do nome.
+
 ### Gráficos exigem internet
 
 Os gráficos do Dashboard usam **Chart.js via CDN** (`cdnjs.cloudflare.com`) — isso é a única
@@ -114,13 +138,14 @@ ficará disponível na tela de Configurações, com migração dos dados locais 
 
 ```
 index.html
+assets/icons/   ícones de instituições financeiras (ver nota acima)
 css/            estilos (main, layout, components, responsive)
 js/
   app.js        ponto de entrada
   core/         database (IndexedDB), router, i18n, app-state, auth, permissions, sync, bootstrap
   locales/      dicionários pt-BR e en-US
-  modules/      uma pasta por tela (dashboard, accounts, transactions, ...)
-  services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics) — regras de negócio
+  modules/      uma pasta por tela (dashboard, accounts, transactions, budgets, ...)
+  services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets) — regras de negócio
   utils/        ids, currency, dates, validation, html, observable, recurrence, csv
 tools/          servidor estático de desenvolvimento
 tests/          testes de unidade (node --test)

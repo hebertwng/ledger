@@ -1,7 +1,7 @@
 // Camada de persistência local (IndexedDB). Um object store por coleção (espelha a seção 4
 // da especificação, mais "outbox" e "appMeta", que são internos e não documentados lá).
 const DB_NAME = 'ledger';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_DEFINITIONS = [
   { name: 'spaces', keyPath: 'id' },
@@ -30,6 +30,7 @@ const STORE_DEFINITIONS = [
     ],
   },
   { name: 'transfers', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }] },
+  { name: 'budgets', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }, { name: 'byCategory', keyPath: 'categoryId' }] },
   { name: 'auditLogs', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }] },
   { name: 'outbox', keyPath: 'opId' },
   { name: 'appMeta', keyPath: 'key' },

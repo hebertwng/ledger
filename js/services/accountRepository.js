@@ -4,15 +4,30 @@ import { createId } from '../utils/ids.js';
 import { nowISOTimestamp } from '../utils/dates.js';
 
 export const ACCOUNT_TYPES = Object.freeze(['checking', 'savings', 'wallet', 'investment', 'other']);
+const SETTLED_STATUSES = new Set(['paid', 'received']);
 
-// Pura: saldo = saldo inicial + soma dos lançamentos não excluídos e não cancelados vinculados
-// à conta. Nunca é editado manualmente (seção 5). "amountCents" já vem com o sinal correto
-// (negativo = saída, positivo = entrada), inclusive para os dois lados de uma transferência.
+// Pura: saldo "previsto" = saldo inicial + soma de todos os lançamentos não excluídos e não
+// cancelados (inclui pendentes). Nunca é editado manualmente (seção 5). "amountCents" já vem
+// com o sinal correto (negativo = saída, positivo = entrada), inclusive nos dois lados de uma
+// transferência.
 export function calculateAccountBalanceCents(account, transactions) {
   const activeTotal = transactions
     .filter((transaction) => transaction.accountId === account.id && !transaction.deletedAt && transaction.status !== 'cancelled')
     .reduce((sum, transaction) => sum + transaction.amountCents, 0);
   return account.initialBalanceCents + activeTotal;
+}
+
+// Pura: saldo "confirmado" = o mesmo cálculo, mas considerando só lançamentos já pagos/
+// recebidos — exclui o que ainda está pendente. Distinção comum em apps financeiros (saldo
+// real vs. projetado).
+export function calculateConfirmedBalanceCents(account, transactions) {
+  const settledTotal = transactions
+    .filter(
+      (transaction) =>
+        transaction.accountId === account.id && !transaction.deletedAt && SETTLED_STATUSES.has(transaction.status)
+    )
+    .reduce((sum, transaction) => sum + transaction.amountCents, 0);
+  return account.initialBalanceCents + settledTotal;
 }
 
 export function calculateConsolidatedBalanceCents(accountBalancesCents) {
@@ -26,7 +41,11 @@ export async function listAccounts(spaceId) {
   ]);
   return accounts
     .filter((account) => !account.deletedAt)
-    .map((account) => ({ ...account, balanceCents: calculateAccountBalanceCents(account, transactions) }))
+    .map((account) => ({
+      ...account,
+      balanceCents: calculateAccountBalanceCents(account, transactions),
+      confirmedBalanceCents: calculateConfirmedBalanceCents(account, transactions),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

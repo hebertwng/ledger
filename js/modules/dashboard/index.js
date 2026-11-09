@@ -10,6 +10,15 @@ import { centsToDisplay } from '../../utils/currency.js';
 import { todayISODate, monthRange, formatDateDisplay, formatReferenceMonth } from '../../utils/dates.js';
 import { addMonths } from '../../utils/recurrence.js';
 import { escapeHtml } from '../../utils/html.js';
+import { navigateTo } from '../../core/router.js';
+import { openCreateForm } from '../transactions/index.js';
+
+function greetingKey() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'dashboard.greeting.morning';
+  if (hour < 18) return 'dashboard.greeting.afternoon';
+  return 'dashboard.greeting.evening';
+}
 
 // Gráficos e indicadores dependem de valores já carregados (nada de drill-down clicável ainda
 // — fica para uma próxima iteração); o período (mês) escolhido aqui só afeta os indicadores e
@@ -53,7 +62,8 @@ export async function render(container) {
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const locale = getLocale();
 
-  const totalBalanceCents = calculateConsolidatedBalanceCents(accounts.map((account) => account.balanceCents));
+  const confirmedBalanceCents = calculateConsolidatedBalanceCents(accounts.map((account) => account.confirmedBalanceCents));
+  const projectedBalanceCents = calculateConsolidatedBalanceCents(accounts.map((account) => account.balanceCents));
   const totalUsedCents = cards.reduce((sum, card) => sum + card.usedCents, 0);
   const totalAvailableCents = cards.reduce((sum, card) => sum + card.availableCents, 0);
   const pendingInvoicesCount = invoices.filter((invoice) => invoice.status !== 'paid').length;
@@ -75,15 +85,21 @@ export async function render(container) {
   container.innerHTML = `
     <section class="view">
       <div class="view__header">
-        <h1>${t('dashboard.title')}</h1>
+        <h1>${t(greetingKey())}</h1>
         <div class="form-field">
           <label for="dashboard-period">${t('dashboard.period')}</label>
           <input id="dashboard-period" type="month" value="${periodState}" />
         </div>
       </div>
       <p class="view__subtitle">${t('dashboard.activeSpace')}: <strong>${activeSpace ? escapeHtml(activeSpace.name) : '-'}</strong></p>
+      <div class="quick-actions">
+        <button type="button" class="button button--expense" id="quick-action-expense">${t('dashboard.quickAction.expense')}</button>
+        <button type="button" class="button button--income" id="quick-action-income">${t('dashboard.quickAction.income')}</button>
+        <button type="button" class="button" id="quick-action-transfer">${t('dashboard.quickAction.transfer')}</button>
+      </div>
       <div class="cards-grid">
-        <article class="card"><h2>${t('dashboard.totalBalance')}</h2><p class="card__value">${centsToDisplay(totalBalanceCents, locale)}</p></article>
+        <article class="card"><h2>${t('dashboard.totalBalance')}</h2><p class="card__value">${centsToDisplay(confirmedBalanceCents, locale)}</p></article>
+        <article class="card"><h2>${t('dashboard.projectedBalance')}</h2><p class="card__value">${centsToDisplay(projectedBalanceCents, locale)}</p></article>
         <article class="card"><h2>${t('dashboard.monthlyIncome')}</h2><p class="card__value">${centsToDisplay(incomeCents, locale)}</p></article>
         <article class="card"><h2>${t('dashboard.monthlyExpense')}</h2><p class="card__value">${centsToDisplay(expenseCents, locale)}</p></article>
         <article class="card"><h2>${t('dashboard.monthlyResult')}</h2><p class="card__value">${centsToDisplay(resultCents, locale)}</p></article>
@@ -122,6 +138,18 @@ export async function render(container) {
       render(container);
     });
   }
+
+  container.querySelector('#quick-action-expense').addEventListener('click', () => {
+    openCreateForm('expense');
+    navigateTo('/transactions');
+  });
+  container.querySelector('#quick-action-income').addEventListener('click', () => {
+    openCreateForm('income');
+    navigateTo('/transactions');
+  });
+  container.querySelector('#quick-action-transfer').addEventListener('click', () => {
+    navigateTo('/transfers');
+  });
 
   if (!activeSpace || !window.Chart) return;
 

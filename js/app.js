@@ -10,6 +10,7 @@ import * as transactionsModule from './modules/transactions/index.js';
 import * as categoriesModule from './modules/categories/index.js';
 import * as creditCardsModule from './modules/credit-cards/index.js';
 import * as invoicesModule from './modules/invoices/index.js';
+import * as budgetsModule from './modules/budgets/index.js';
 import * as transfersModule from './modules/transfers/index.js';
 import * as reportsModule from './modules/reports/index.js';
 import * as settingsModule from './modules/settings/index.js';
@@ -56,6 +57,7 @@ async function bootstrapApp() {
   registerRoute('/categories', categoriesModule.render);
   registerRoute('/credit-cards', creditCardsModule.render);
   registerRoute('/invoices', invoicesModule.render);
+  registerRoute('/budgets', budgetsModule.render);
   registerRoute('/transfers', transfersModule.render);
   registerRoute('/reports', reportsModule.render);
   registerRoute('/settings', settingsModule.render);

@@ -41,15 +41,21 @@
     </header>
     <div class="app-body">
       <nav id="app-nav" class="app-nav">
-        <a href="#/dashboard" data-route="/dashboard" data-i18n="nav.dashboard"></a>
-        <a href="#/accounts" data-route="/accounts" data-i18n="nav.accounts"></a>
-        <a href="#/transactions" data-route="/transactions" data-i18n="nav.transactions"></a>
-        <a href="#/categories" data-route="/categories" data-i18n="nav.categories"></a>
-        <a href="#/credit-cards" data-route="/credit-cards" data-i18n="nav.creditCards"></a>
-        <a href="#/invoices" data-route="/invoices" data-i18n="nav.invoices"></a>
-        <a href="#/transfers" data-route="/transfers" data-i18n="nav.transfers"></a>
-        <a href="#/reports" data-route="/reports" data-i18n="nav.reports"></a>
-        <a href="#/settings" data-route="/settings" data-i18n="nav.settings"></a>
+        <div class="app-nav__group">
+          <a href="#/dashboard" data-route="/dashboard" data-i18n="nav.dashboard"></a>
+          <a href="#/transactions" data-route="/transactions" data-i18n="nav.transactions"></a>
+          <a href="#/transfers" data-route="/transfers" data-i18n="nav.transfers"></a>
+          <a href="#/invoices" data-route="/invoices" data-i18n="nav.invoices"></a>
+          <a href="#/budgets" data-route="/budgets" data-i18n="nav.budgets"></a>
+          <a href="#/reports" data-route="/reports" data-i18n="nav.reports"></a>
+        </div>
+        <hr class="app-nav__divider" />
+        <div class="app-nav__group">
+          <a href="#/accounts" data-route="/accounts" data-i18n="nav.accounts"></a>
+          <a href="#/credit-cards" data-route="/credit-cards" data-i18n="nav.creditCards"></a>
+          <a href="#/categories" data-route="/categories" data-i18n="nav.categories"></a>
+          <a href="#/settings" data-route="/settings" data-i18n="nav.settings"></a>
+        </div>
       </nav>
       <main id="app-main" class="app-main"></main>
     </div>
