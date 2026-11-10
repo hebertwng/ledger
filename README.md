@@ -6,7 +6,7 @@ para publicação estática (GitHub Pages).
 
 ## Status atual
 
-**Etapas 2 a 5 concluídas.** Etapa 2: estrutura do projeto, layout/navegação responsiva (menu
+**Etapas 1 a 6 concluídas.** Etapa 2: estrutura do projeto, layout/navegação responsiva (menu
 lateral fixo à esquerda em qualquer largura de tela), roteamento por hash, IndexedDB com o schema
 inicial de todas as coleções, internacionalização (pt-BR/en-US) e criação automática do primeiro
 espaço financeiro local com as categorias padrão. Etapa 3: cadastro completo de **contas** (com
@@ -15,7 +15,7 @@ saldo sempre recalculado a partir dos lançamentos, nunca editado manualmente), 
 **cartões de crédito** e **transferências entre contas** (gera os dois lançamentos ligados, nunca
 contabilizados como receita/despesa). Etapa 4: **lançamentos** de receita/despesa avulsos,
 **parcelados** (com ajuste de centavos na última parcela) e **recorrentes** (semanal/mensal/anual,
-geração automática para os próximos 12 meses, pausar/retomar/encerrar série), edição e exclusão
+geradas sob demanda conforme os meses são visualizados, pausar/retomar/encerrar série), edição e exclusão
 com as três granularidades (somente este / este e os próximos / todos), preservando por padrão
 lançamentos já pagos/recebidos (com confirmação explícita para sobrepor), e filtros combináveis
 (período, tipo, conta, categoria, status, texto, valor, ordenação). Etapa 5: **compras no cartão**
@@ -61,9 +61,35 @@ Melhorias de usabilidade aplicadas ao LEDGER:
 - **Atalhos de teclado** `D`/`R`/`T` para nova despesa/receita/transferência, quando o foco não
   está em um campo de formulário.
 
-Os ícones de bancos/cartões ficam em `assets/icons/institutions/` e servem só para a
+Os ícones de bancos/cartões (`assets/icons/institutions/`, 24 instituições) servem só para a
 lista de instituições, não para a identidade visual do app; os badges de categoria usam, por
 enquanto, a inicial da categoria sobre uma cor gerada a partir do nome.
+
+### Parcelas e recorrências geradas sob demanda
+
+Ao criar um lançamento parcelado ou recorrente (semanal, mensal ou anual), só as ocorrências até o
+fim do mês atual (ou do mês da primeira ocorrência, se ela for futura) são gravadas. As demais
+passam a existir quando o mês delas é visualizado — na navegação ‹ mês › da tela de Lançamentos
+ou da Visão geral — e o mês corrente é sempre completado ao abrir o app. A série guarda um molde
+(`template`) com descrição, valor, categoria e conta/cartão; editar "este e os próximos"/"todos"
+atualiza também o molde, e excluir "este e os próximos"/"todos" encerra a série, para que nada
+volte a ser gerado. Uma parcela excluída individualmente nunca é recriada. Parcelas de cartão
+ainda não geradas continuam contando no **limite utilizado** do cartão desde a compra.
+
+### Visão geral, ícones e identidade
+
+A Visão geral reúne saudação e período com
+navegação por mês, resumo de receitas/despesas do mês com botão para ocultar valores e atalhos
+de Despesa/Receita/Transferência, **Maiores gastos** (rosca + top 5 categorias com %),
+**Despesas a pagar** e **Receitas a receber** do mês, **Minhas contas**, **Meus cartões** (fatura
+do mês e limite disponível) e **Limite de gastos**. Os 6 gráficos analíticos da Etapa 6 ficam numa
+seção recolhível no fim da página. A tela de **Lançamentos** ganhou navegação por mês (‹ › ou
+setas do teclado), filtros em linha, linhas com ícone de recorrência/parcela (ex.: 2/10), conta,
+valor e marcador de pago, e rodapé com receitas, despesas, saldo e previsto do mês.
+
+O LEDGER tem ícone próprio (`assets/icons/ledger.svg`, um livro-razão com colunas de
+lançamentos), usado como favicon e no cabeçalho, e todo item do menu lateral tem um ícone além do
+nome (`js/utils/icons.js`, SVGs inline — funcionam offline).
 
 ### Gráficos exigem internet
 
@@ -146,7 +172,7 @@ js/
   locales/      dicionários pt-BR e en-US
   modules/      uma pasta por tela (dashboard, accounts, transactions, budgets, ...)
   services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets) — regras de negócio
-  utils/        ids, currency, dates, validation, html, observable, recurrence, csv
+  utils/        ids, currency, dates, validation, html, observable, recurrence, csv, icons
 tools/          servidor estático de desenvolvimento
 tests/          testes de unidade (node --test)
 ```

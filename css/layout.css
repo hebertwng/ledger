@@ -90,3 +90,45 @@
   padding: var(--space-4);
   overflow-y: auto;
 }
+
+/* Marca (ícone de livro-razão) ao lado do nome no cabeçalho. */
+.app-header__brand {
+  align-items: center;
+}
+
+.app-header__mark {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+
+/* Cada item do menu tem um ícone como indicador visual, além do nome. */
+.app-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-nav__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.app-nav__icon svg {
+  display: block;
+}
+
+.app-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-nav a.is-active {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-weight: 600;
+}

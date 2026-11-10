@@ -1,6 +1,6 @@
 import { t, getLocale } from '../../core/i18n.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
-import { listAccounts } from '../../services/accountRepository.js';
+import { listAccounts, calculateBalancesAtDate } from '../../services/accountRepository.js';
 import { listCategories } from '../../services/categoryRepository.js';
 import { listCreditCards } from '../../services/creditCardRepository.js';
 import {
@@ -16,27 +16,40 @@ import {
   setSeriesPaused,
   resumeRecurringSeries,
   endRecurringSeries,
+  ensureOccurrencesThrough,
   TRANSACTION_STATUSES,
   RECURRENCE_FREQUENCIES,
 } from '../../services/transactionRepository.js';
 import { centsToDisplay, parseCurrencyInputToCents } from '../../utils/currency.js';
-import { todayISODate, formatDateDisplay, formatReferenceMonth, currentWeekRange, currentMonthRange } from '../../utils/dates.js';
+import { todayISODate, formatReferenceMonth, monthRange } from '../../utils/dates.js';
+import { addMonths } from '../../utils/recurrence.js';
 import { listInvoices } from '../../services/invoiceRepository.js';
+import { getAllByIndex } from '../../core/database.js';
 import { isRequired, isValidISODate } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
+import { iconSvg } from '../../utils/icons.js';
 import { navigateTo } from '../../core/router.js';
 
 let formState = null;
 let scopeState = null;
 let keydownHandler = null;
 
-// Permite que outra tela (ex.: os atalhos de "Novo lançamento" do Painel) abra esta tela já
+// Mês exibido na tela (YYYY-MM). Navegar para um mês futuro é o que dispara a geração das
+// parcelas/recorrências daquele mês — elas não são mais criadas todas de uma vez.
+let monthState = todayISODate().slice(0, 7);
+
+// Permite que outra tela (ex.: os atalhos de "Novo lançamento" da Visão geral) abra esta tela já
 // com o formulário de criação pronto, em vez de só navegar para a lista.
 export function openCreateForm(kind) {
   formState = { mode: 'create', kind };
 }
 
-let filterState = {
+// Permite que a Visão geral abra a lista já posicionada em um mês específico.
+export function setTransactionsMonth(yearMonth) {
+  monthState = yearMonth;
+}
+
+const EMPTY_FILTERS = Object.freeze({
   kind: '',
   accountId: '',
   categoryId: '',
@@ -44,15 +57,24 @@ let filterState = {
   text: '',
   minAmount: '',
   maxAmount: '',
-  period: 'all',
-  startDate: '',
-  endDate: '',
   sortBy: 'date',
-};
+});
+
+let filterState = { ...EMPTY_FILTERS };
+let moreFiltersOpen = false;
+
+function monthTitle(yearMonth, locale) {
+  const [year, month] = yearMonth.split('-').map(Number);
+  const name = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', month: 'long' }).format(new Date(Date.UTC(year, month - 1, 1)));
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`;
+}
 
 export async function render(container) {
   const activeSpace = await getActiveSpace();
-  const [transactions, accounts, categories, series, creditCards, invoices] = activeSpace
+  const { endDate: monthEndDate } = monthRange(monthState);
+  if (activeSpace) await ensureOccurrencesThrough(activeSpace.id, monthEndDate);
+
+  const [transactions, accounts, categories, series, creditCards, invoices, allTransactions] = activeSpace
     ? await Promise.all([
         listTransactions(activeSpace.id),
         listAccounts(activeSpace.id),
@@ -60,13 +82,15 @@ export async function render(container) {
         listSeries(activeSpace.id),
         listCreditCards(activeSpace.id),
         listInvoices(activeSpace.id),
+        getAllByIndex('transactions', 'bySpace', activeSpace.id),
       ])
-    : [[], [], [], [], [], []];
+    : [[], [], [], [], [], [], []];
 
   const context = {
     container,
     activeSpace,
     transactions,
+    allTransactions,
     accounts,
     categories,
     series,
@@ -77,16 +101,25 @@ export async function render(container) {
     creditCardsById: new Map(creditCards.map((card) => [card.id, card])),
     invoicesById: new Map(invoices.map((invoice) => [invoice.id, invoice])),
   };
+  const locale = getLocale();
 
   container.innerHTML = `
-    <section class="view">
-      <div class="view__header">
-        <h1>${t('modules.transactions.title')}</h1>
-        <button type="button" id="transactions-new-button" class="button button--primary" ${accounts.length === 0 ? 'disabled' : ''}>${t('transactions.newButton')}</button>
+    <section class="view tx-view">
+      <div class="tx-toolbar">
+        <button type="button" id="transactions-new-button" class="button button--dark" ${accounts.length === 0 ? 'disabled' : ''}>${iconSvg('plus')} ${t('transactions.newButtonShort')}</button>
+        <div class="month-nav" role="group" aria-label="${t('transactions.monthNav.label')}">
+          <button type="button" class="icon-button" id="month-prev" title="${t('transactions.monthNav.previous')}">${iconSvg('chevronLeft')}</button>
+          <button type="button" class="month-nav__label" id="month-current" title="${t('transactions.monthNav.today')}">${monthTitle(monthState, locale)}</button>
+          <button type="button" class="icon-button" id="month-next" title="${t('transactions.monthNav.next')}">${iconSvg('chevronRight')}</button>
+        </div>
+        <div class="tx-toolbar__spacer"></div>
       </div>
       ${accounts.length === 0 ? `<div class="form-note"><p>${t('transactions.noAccountsWarning')}</p></div>` : ''}
       <div id="transactions-filters-slot"></div>
-      <div id="transactions-results-slot"></div>
+      <div class="tx-panel">
+        <div id="transactions-results-slot"></div>
+        <div id="transactions-footer-slot" class="tx-footer"></div>
+      </div>
       <div id="transactions-modal-slot"></div>
     </section>
   `;
@@ -99,6 +132,19 @@ export async function render(container) {
     });
   }
 
+  container.querySelector('#month-prev').addEventListener('click', () => {
+    monthState = addMonths(`${monthState}-01`, -1).slice(0, 7);
+    render(container);
+  });
+  container.querySelector('#month-next').addEventListener('click', () => {
+    monthState = addMonths(`${monthState}-01`, 1).slice(0, 7);
+    render(container);
+  });
+  container.querySelector('#month-current').addEventListener('click', () => {
+    monthState = todayISODate().slice(0, 7);
+    render(container);
+  });
+
   renderFiltersBar(context);
   updateResultsSlot(context);
   attachKeyboardShortcuts(context);
@@ -107,9 +153,9 @@ export async function render(container) {
   if (scopeState) renderScopeChooser(context);
 }
 
-// Atalhos D/R/T (nova despesa/receita/transferência), e Esc para
-// fechar o modal aberto — só reagem enquanto esta tela está ativa (confere a rota a cada
-// tecla, já que o listener fica em document e o router não tem um "desmontar" explícito).
+// Atalhos D/R/T (nova despesa/receita/transferência), ←/→ para trocar de mês, e Esc para fechar
+// o modal aberto — só reagem enquanto esta tela está ativa (confere a rota a cada tecla, já que
+// o listener fica em document e o router não tem um "desmontar" explícito).
 function attachKeyboardShortcuts(context) {
   if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
   keydownHandler = (event) => {
@@ -136,13 +182,17 @@ function attachKeyboardShortcuts(context) {
       renderForm(context);
     } else if (key === 't') {
       navigateTo('/transfers');
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      monthState = addMonths(`${monthState}-01`, event.key === 'ArrowLeft' ? -1 : 1).slice(0, 7);
+      render(context.container);
     }
   };
   document.addEventListener('keydown', keydownHandler);
 }
 
 function resolveEffectiveFilters() {
-  const filters = {
+  return {
+    ...monthRange(monthState),
     kind: filterState.kind || undefined,
     accountId: filterState.accountId || undefined,
     categoryId: filterState.categoryId || undefined,
@@ -151,132 +201,98 @@ function resolveEffectiveFilters() {
     minAmountCents: filterState.minAmount ? parseCurrencyInputToCents(filterState.minAmount) : undefined,
     maxAmountCents: filterState.maxAmount ? parseCurrencyInputToCents(filterState.maxAmount) : undefined,
   };
+}
 
-  if (filterState.period === 'today') {
-    const today = todayISODate();
-    filters.startDate = today;
-    filters.endDate = today;
-  } else if (filterState.period === 'week') {
-    Object.assign(filters, currentWeekRange());
-  } else if (filterState.period === 'month') {
-    Object.assign(filters, currentMonthRange());
-  } else if (filterState.period === 'custom') {
-    if (filterState.startDate) filters.startDate = filterState.startDate;
-    if (filterState.endDate) filters.endDate = filterState.endDate;
-  }
-
-  return filters;
+function selectHtml(name, label, allLabel, options) {
+  return `
+    <label class="filter-chip">
+      <span class="visually-hidden">${label}</span>
+      <select name="${name}" aria-label="${label}">
+        <option value="">${allLabel}</option>
+        ${options.map((option) => `<option value="${option.value}" ${filterState[name] === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
+      </select>
+    </label>
+  `;
 }
 
 function renderFiltersBar(context) {
   const slot = context.container.querySelector('#transactions-filters-slot');
   const { accounts, categories } = context;
+  const hasActiveFilters = Object.keys(EMPTY_FILTERS).some((key) => filterState[key] !== EMPTY_FILTERS[key]);
 
   slot.innerHTML = `
-    <form id="transactions-filters" class="filters-bar">
-      <div class="form-field">
-        <label for="filter-period">${t('transactions.filters.period')}</label>
-        <select id="filter-period" name="period">
-          <option value="all" ${filterState.period === 'all' ? 'selected' : ''}>${t('transactions.filters.periodAll')}</option>
-          <option value="today" ${filterState.period === 'today' ? 'selected' : ''}>${t('transactions.filters.periodToday')}</option>
-          <option value="week" ${filterState.period === 'week' ? 'selected' : ''}>${t('transactions.filters.periodWeek')}</option>
-          <option value="month" ${filterState.period === 'month' ? 'selected' : ''}>${t('transactions.filters.periodMonth')}</option>
-          <option value="custom" ${filterState.period === 'custom' ? 'selected' : ''}>${t('transactions.filters.periodCustom')}</option>
-        </select>
+    <form id="transactions-filters" class="tx-filters">
+      <div class="tx-filters__row">
+        ${selectHtml('kind', t('transactions.filters.kind'), t('transactions.filters.kindChip'), [
+          { value: 'income', label: t('transactions.kind.income') },
+          { value: 'expense', label: t('transactions.kind.expense') },
+        ])}
+        ${selectHtml('accountId', t('transactions.filters.account'), t('transactions.filters.accountChip'), accounts.map((account) => ({ value: account.id, label: account.name })))}
+        ${selectHtml('categoryId', t('transactions.filters.category'), t('transactions.filters.categoryChip'), categories.map((category) => ({ value: category.id, label: category.name })))}
+        ${selectHtml('status', t('transactions.filters.status'), t('transactions.filters.statusChip'), TRANSACTION_STATUSES.map((status) => ({ value: status, label: t(`transactions.status.${status}`) })))}
+        <label class="tx-filters__search">
+          ${iconSvg('search', { size: 16 })}
+          <input name="text" type="search" placeholder="${t('transactions.filters.text')}" value="${escapeHtml(filterState.text)}" />
+        </label>
+        <button type="button" id="filters-more" class="icon-button ${moreFiltersOpen ? 'is-active' : ''}" title="${t('transactions.filters.more')}">${iconSvg('filter')}</button>
+        ${hasActiveFilters ? `<button type="button" id="filters-clear" class="link-button">${t('transactions.filters.clear')}</button>` : ''}
       </div>
       ${
-        filterState.period === 'custom'
+        moreFiltersOpen
           ? `
-            <div class="form-field">
-              <label for="filter-start-date">${t('transactions.filters.startDate')}</label>
-              <input id="filter-start-date" name="startDate" type="date" value="${filterState.startDate}" />
-            </div>
-            <div class="form-field">
-              <label for="filter-end-date">${t('transactions.filters.endDate')}</label>
-              <input id="filter-end-date" name="endDate" type="date" value="${filterState.endDate}" />
+            <div class="tx-filters__more">
+              <div class="form-field">
+                <label for="filter-min-amount">${t('transactions.filters.minAmount')}</label>
+                <input id="filter-min-amount" name="minAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.minAmount)}" />
+              </div>
+              <div class="form-field">
+                <label for="filter-max-amount">${t('transactions.filters.maxAmount')}</label>
+                <input id="filter-max-amount" name="maxAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.maxAmount)}" />
+              </div>
+              <div class="form-field">
+                <label for="filter-sort">${t('transactions.filters.sortBy')}</label>
+                <select id="filter-sort" name="sortBy">
+                  <option value="date" ${filterState.sortBy === 'date' ? 'selected' : ''}>${t('transactions.filters.sortDate')}</option>
+                  <option value="amount" ${filterState.sortBy === 'amount' ? 'selected' : ''}>${t('transactions.filters.sortAmount')}</option>
+                  <option value="description" ${filterState.sortBy === 'description' ? 'selected' : ''}>${t('transactions.filters.sortDescription')}</option>
+                </select>
+              </div>
             </div>
           `
           : ''
       }
-      <div class="form-field">
-        <label for="filter-kind">${t('transactions.filters.kind')}</label>
-        <select id="filter-kind" name="kind">
-          <option value="" ${filterState.kind === '' ? 'selected' : ''}>${t('transactions.filters.kindAll')}</option>
-          <option value="income" ${filterState.kind === 'income' ? 'selected' : ''}>${t('transactions.kind.income')}</option>
-          <option value="expense" ${filterState.kind === 'expense' ? 'selected' : ''}>${t('transactions.kind.expense')}</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label for="filter-account">${t('transactions.filters.account')}</label>
-        <select id="filter-account" name="accountId">
-          <option value="" ${filterState.accountId === '' ? 'selected' : ''}>${t('transactions.filters.accountAll')}</option>
-          ${accounts.map((account) => `<option value="${account.id}" ${filterState.accountId === account.id ? 'selected' : ''}>${escapeHtml(account.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-field">
-        <label for="filter-category">${t('transactions.filters.category')}</label>
-        <select id="filter-category" name="categoryId">
-          <option value="" ${filterState.categoryId === '' ? 'selected' : ''}>${t('transactions.filters.categoryAll')}</option>
-          ${categories.map((category) => `<option value="${category.id}" ${filterState.categoryId === category.id ? 'selected' : ''}>${escapeHtml(category.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-field">
-        <label for="filter-status">${t('transactions.filters.status')}</label>
-        <select id="filter-status" name="status">
-          <option value="" ${filterState.status === '' ? 'selected' : ''}>${t('transactions.filters.statusAll')}</option>
-          ${TRANSACTION_STATUSES.map((status) => `<option value="${status}" ${filterState.status === status ? 'selected' : ''}>${t(`transactions.status.${status}`)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-field">
-        <label for="filter-text">${t('transactions.filters.text')}</label>
-        <input id="filter-text" name="text" type="text" value="${escapeHtml(filterState.text)}" />
-      </div>
-      <div class="form-field">
-        <label for="filter-min-amount">${t('transactions.filters.minAmount')}</label>
-        <input id="filter-min-amount" name="minAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.minAmount)}" />
-      </div>
-      <div class="form-field">
-        <label for="filter-max-amount">${t('transactions.filters.maxAmount')}</label>
-        <input id="filter-max-amount" name="maxAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.maxAmount)}" />
-      </div>
-      <div class="form-field">
-        <label for="filter-sort">${t('transactions.filters.sortBy')}</label>
-        <select id="filter-sort" name="sortBy">
-          <option value="date" ${filterState.sortBy === 'date' ? 'selected' : ''}>${t('transactions.filters.sortDate')}</option>
-          <option value="amount" ${filterState.sortBy === 'amount' ? 'selected' : ''}>${t('transactions.filters.sortAmount')}</option>
-          <option value="description" ${filterState.sortBy === 'description' ? 'selected' : ''}>${t('transactions.filters.sortDescription')}</option>
-        </select>
-      </div>
-      <div class="form-actions">
-        <button type="button" id="filters-clear" class="button">${t('transactions.filters.clear')}</button>
-      </div>
     </form>
   `;
 
   const form = slot.querySelector('#transactions-filters');
-  const periodSelect = form.querySelector('#filter-period');
+  form.addEventListener('submit', (event) => event.preventDefault());
 
-  periodSelect.addEventListener('change', () => {
-    filterState.period = periodSelect.value;
-    renderFiltersBar(context);
-    updateResultsSlot(context);
-  });
-
-  for (const field of ['startDate', 'endDate', 'kind', 'accountId', 'categoryId', 'status', 'text', 'minAmount', 'maxAmount', 'sortBy']) {
+  for (const field of ['kind', 'accountId', 'categoryId', 'status', 'text', 'minAmount', 'maxAmount', 'sortBy']) {
     const input = form.querySelector(`[name="${field}"]`);
     if (!input) continue;
-    const eventName = input.tagName === 'SELECT' || input.type === 'date' ? 'change' : 'input';
+    const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
       filterState[field] = input.value;
       updateResultsSlot(context);
+      // O botão "Limpar filtros" aparece/some conforme haja filtro ativo — só re-renderiza a
+      // barra em selects, para não tirar o foco de quem está digitando na busca.
+      if (input.tagName === 'SELECT') renderFiltersBar(context);
     });
   }
 
-  slot.querySelector('#filters-clear').addEventListener('click', () => {
-    filterState = { kind: '', accountId: '', categoryId: '', status: '', text: '', minAmount: '', maxAmount: '', period: 'all', startDate: '', endDate: '', sortBy: 'date' };
+  slot.querySelector('#filters-more').addEventListener('click', () => {
+    moreFiltersOpen = !moreFiltersOpen;
     renderFiltersBar(context);
-    updateResultsSlot(context);
   });
+
+  const clearButton = slot.querySelector('#filters-clear');
+  if (clearButton) {
+    clearButton.addEventListener('click', () => {
+      filterState = { ...EMPTY_FILTERS };
+      renderFiltersBar(context);
+      updateResultsSlot(context);
+    });
+  }
 }
 
 function updateResultsSlot(context) {
@@ -284,10 +300,18 @@ function updateResultsSlot(context) {
   const filtered = filterTransactions(context.transactions, resolveEffectiveFilters());
   const sorted = sortTransactions(filtered, filterState.sortBy);
 
-  slot.innerHTML = sorted.length === 0 ? `<div class="empty-state"><p>${t('transactions.emptyState')}</p></div>` : listHtml(sorted, context);
+  slot.innerHTML =
+    sorted.length === 0
+      ? `<div class="empty-state tx-empty"><p>${t('transactions.emptyStateMonth', { month: monthTitle(monthState, getLocale()) })}</p></div>`
+      : listHtml(sorted, context);
 
-  for (const button of slot.querySelectorAll('[data-edit-id]')) {
-    button.addEventListener('click', () => startEdit(context, button.dataset.editId));
+  renderFooter(context, filtered);
+
+  for (const element of slot.querySelectorAll('[data-edit-id]')) {
+    element.addEventListener('click', (event) => {
+      if (event.target.closest('[data-delete-id], [data-toggle-paid-id], [data-pause-series], [data-resume-series], [data-end-series]')) return;
+      startEdit(context, element.dataset.editId);
+    });
   }
   for (const button of slot.querySelectorAll('[data-delete-id]')) {
     button.addEventListener('click', () => startDelete(context, button.dataset.deleteId));
@@ -316,15 +340,39 @@ function updateResultsSlot(context) {
   }
 }
 
+// Rodapé fixo da lista: saldo realizado e previsto das contas ao final do
+// mês exibido, mais os totais de receitas/despesas dos lançamentos listados.
+function renderFooter(context, monthTransactions) {
+  const slot = context.container.querySelector('#transactions-footer-slot');
+  const locale = getLocale();
+  const { endDate } = monthRange(monthState);
+  const accounts = filterState.accountId ? context.accounts.filter((account) => account.id === filterState.accountId) : context.accounts;
+  const { confirmedCents, projectedCents } = calculateBalancesAtDate(accounts, context.allTransactions, endDate);
+  const active = monthTransactions.filter((transaction) => transaction.status !== 'cancelled');
+  const incomeCents = active.filter((transaction) => transaction.kind === 'income').reduce((sum, transaction) => sum + Math.abs(transaction.amountCents), 0);
+  const expenseCents = active.filter((transaction) => transaction.kind === 'expense').reduce((sum, transaction) => sum + Math.abs(transaction.amountCents), 0);
+
+  slot.innerHTML = `
+    <div class="tx-footer__group">
+      <span class="tx-footer__item"><span>${t('transactions.footer.income')}</span><strong class="amount--income">${centsToDisplay(incomeCents, locale)}</strong></span>
+      <span class="tx-footer__item"><span>${t('transactions.footer.expense')}</span><strong class="amount--expense">${centsToDisplay(expenseCents, locale)}</strong></span>
+    </div>
+    <div class="tx-footer__group">
+      <span class="tx-footer__item"><span>${t('transactions.footer.balance')}</span><strong>${centsToDisplay(confirmedCents, locale)}</strong></span>
+      <span class="tx-footer__item"><span>${t('transactions.footer.projected')}</span><strong>${centsToDisplay(projectedCents, locale)}</strong></span>
+    </div>
+  `;
+}
+
 function seriesBadgeHtml(transaction, seriesById) {
   if (!transaction.seriesId) return '';
   const series = seriesById.get(transaction.seriesId);
   if (!series) return '';
   if (series.kind === 'installment') {
-    return `<span class="badge badge--muted">${t('transactions.badge.installment', { n: transaction.installmentNumber, total: series.installmentsTotal })}</span>`;
+    return `<span class="tx-row__series" title="${t('transactions.badge.installment', { n: transaction.installmentNumber, total: series.installmentsTotal })}">${iconSvg('repeat', { size: 14 })} ${transaction.installmentNumber}/${series.installmentsTotal}</span>`;
   }
-  const pausedBadge = series.paused ? ` <span class="badge badge--muted">${t('transactions.badge.paused')}</span>` : '';
-  return `<span class="badge badge--muted">${t('transactions.badge.recurring')}</span>${pausedBadge}`;
+  const title = series.paused ? `${t('transactions.badge.recurring')} · ${t('transactions.badge.paused')}` : `${t('transactions.badge.recurring')} · ${t(`transactions.frequency.${series.frequency}`)}`;
+  return `<span class="tx-row__series ${series.paused ? 'is-paused' : ''}" title="${title}">${iconSvg('repeat', { size: 14 })}</span>`;
 }
 
 function seriesActionsHtml(transaction, seriesById) {
@@ -352,23 +400,24 @@ function paymentTargetLabel(transaction, context) {
 const SETTLED_STATUSES_SET = new Set(['paid', 'received']);
 
 // Cor determinística a partir do nome da categoria — usada quando a categoria não tem uma
-// cor própria definida (ainda não editável na tela de Categorias), só para dar variedade
-// visual aos ícones da lista.
-function colorFromText(text) {
+// cor própria definida, só para dar variedade visual aos ícones da lista.
+export function colorFromText(text) {
   if (!text) return '#94a3b8';
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) hash = text.charCodeAt(index) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 55%, 45%)`;
+  return `hsl(${Math.abs(hash) % 360}, 55%, 52%)`;
 }
 
-function categoryBadgeHtml(category) {
+export function categoryBadgeHtml(category, className = 'tx-row__icon') {
   const letter = category?.name ? category.name.trim().charAt(0).toUpperCase() : '•';
   const color = category?.color || colorFromText(category?.name || '');
-  return `<div class="tx-row__icon" style="background:${escapeHtml(color)}">${escapeHtml(letter)}</div>`;
+  return `<div class="${className}" style="background:${escapeHtml(color)}">${escapeHtml(letter)}</div>`;
 }
 
 function dateHeaderLabel(isoDate, locale) {
-  return isoDate === todayISODate() ? t('transactions.dateGroup.today') : formatDateDisplay(isoDate, locale);
+  if (isoDate === todayISODate()) return t('transactions.dateGroup.today');
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Intl.DateTimeFormat(locale, { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 function rowHtml(transaction, context) {
@@ -376,21 +425,26 @@ function rowHtml(transaction, context) {
   const locale = getLocale();
   const category = transaction.categoryId ? categoriesById.get(transaction.categoryId) : null;
   const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
-  const amountClass = transaction.amountCents < 0 ? 'tx-row__amount--expense' : 'tx-row__amount--income';
+  const isCancelled = transaction.status === 'cancelled';
+  const amountClass = transaction.amountCents < 0 ? 'amount--expense' : 'amount--income';
+  const toggleTitle = isSettled ? t('transactions.quickAction.markPending') : t('transactions.quickAction.markPaid');
 
   return `
-    <article class="tx-row">
+    <article class="tx-row ${isCancelled ? 'is-cancelled' : ''}" data-edit-id="${transaction.id}" tabindex="0">
       ${categoryBadgeHtml(category)}
       <div class="tx-row__main">
-        <p class="tx-row__title">${escapeHtml(transaction.description || '')} ${seriesBadgeHtml(transaction, seriesById)}</p>
-        <p class="tx-row__subtitle">${category ? escapeHtml(category.name) : t('transactions.form.categoryNone')} · ${paymentTargetLabel(transaction, context)} · ${t(`transactions.status.${transaction.status}`)}</p>
+        <p class="tx-row__title">${escapeHtml(transaction.description || '')}</p>
+        <p class="tx-row__subtitle">${category ? escapeHtml(category.name) : t('transactions.form.categoryNone')}${isCancelled ? ` · ${t('transactions.status.cancelled')}` : ''}</p>
+      </div>
+      <div class="tx-row__meta">
+        ${seriesBadgeHtml(transaction, seriesById) || '<span></span>'}
+        <span class="tx-row__target">${iconSvg(transaction.creditCardId ? 'creditCards' : 'accounts', { size: 14 })} ${paymentTargetLabel(transaction, context)}</span>
       </div>
       <div class="tx-row__amount ${amountClass}">${centsToDisplay(transaction.amountCents, locale)}</div>
+      <button type="button" class="status-toggle ${isSettled ? 'is-settled' : ''}" data-toggle-paid-id="${transaction.id}" title="${toggleTitle}" aria-label="${toggleTitle}">${iconSvg(isSettled ? 'checkCircle' : 'circle', { size: 20 })}</button>
       <div class="tx-row__actions">
-        <button type="button" class="link-button" data-toggle-paid-id="${transaction.id}" title="${isSettled ? t('transactions.quickAction.markPending') : t('transactions.quickAction.markPaid')}">${isSettled ? '↺' : '✓'}</button>
-        <button type="button" class="link-button" data-edit-id="${transaction.id}">${t('common.edit')}</button>
-        <button type="button" class="link-button" data-delete-id="${transaction.id}">${t('common.delete')}</button>
         ${seriesActionsHtml(transaction, seriesById)}
+        <button type="button" class="icon-button icon-button--danger" data-delete-id="${transaction.id}" title="${t('common.delete')}" aria-label="${t('common.delete')}">${iconSvg('trash', { size: 16 })}</button>
       </div>
     </article>
   `;

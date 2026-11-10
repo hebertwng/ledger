@@ -3,6 +3,7 @@ import { getCurrentUser } from '../core/auth.js';
 import { createId } from '../utils/ids.js';
 import { nowISOTimestamp } from '../utils/dates.js';
 import { listInvoices, calculateCardUsageCents } from './invoiceRepository.js';
+import { pendingInstallmentCentsByCard } from './transactionRepository.js';
 
 // Comportamento no próprio dia do fechamento varia por administradora (seção 6); configurável
 // por cartão.
@@ -17,12 +18,14 @@ export async function listCreditCards(spaceId) {
 }
 
 // Limite utilizado = soma das faturas ainda não pagas do cartão (seção 6); nunca armazenado,
-// sempre recalculado a partir das faturas/lançamentos, como o saldo de conta.
+// sempre recalculado a partir das faturas/lançamentos, como o saldo de conta. Parcelas de compras
+// parceladas cujos meses ainda não foram visualizados (e por isso ainda não foram geradas) também
+// entram: comprometem o limite desde a compra, como em qualquer cartão.
 export async function listCreditCardsWithUsage(spaceId) {
-  const [cards, invoices] = await Promise.all([listCreditCards(spaceId), listInvoices(spaceId)]);
+  const [cards, invoices, pendingByCard] = await Promise.all([listCreditCards(spaceId), listInvoices(spaceId), pendingInstallmentCentsByCard(spaceId)]);
   return cards.map((card) => {
     const cardInvoices = invoices.filter((invoice) => invoice.creditCardId === card.id);
-    const usedCents = calculateCardUsageCents(cardInvoices);
+    const usedCents = calculateCardUsageCents(cardInvoices) + (pendingByCard.get(card.id) || 0);
     return { ...card, usedCents, availableCents: card.limitCents - usedCents };
   });
 }

@@ -2,13 +2,12 @@ import { getAllByIndex, putRecord, getRecord } from '../core/database.js';
 import { getCurrentUser } from '../core/auth.js';
 import { createId } from '../utils/ids.js';
 import { nowISOTimestamp, todayISODate } from '../utils/dates.js';
-import { buildInstallmentAmounts, buildInstallmentDates, buildRecurringDates, addMonths } from '../utils/recurrence.js';
+import { buildInstallmentAmounts, planMissingOccurrences, unmaterializedInstallmentCents, addDays, endOfMonth } from '../utils/recurrence.js';
 import { getOrCreateInvoice } from './invoiceRepository.js';
 
 export const TRANSACTION_STATUSES = Object.freeze(['pending', 'paid', 'received', 'cancelled']);
 export const RECURRENCE_FREQUENCIES = Object.freeze(['weekly', 'monthly', 'annual']);
 const PAID_STATUSES = new Set(['paid', 'received']);
-const RECURRING_HORIZON_MONTHS = 12;
 
 function isPaid(transaction) {
   return PAID_STATUSES.has(transaction.status);
@@ -109,23 +108,45 @@ export async function createSimpleTransaction(spaceId, input) {
   return transaction;
 }
 
+// Molde (template) com os dados comuns a todas as ocorrências de uma série — usado para gerar
+// as próximas ocorrências sob demanda, quando o mês delas for visualizado.
+function buildSeriesTemplate(input, amountCents) {
+  return {
+    kind: input.kind,
+    description: input.description || '',
+    amountCents,
+    categoryId: input.categoryId || null,
+    accountId: input.creditCardId ? null : input.accountId || null,
+    creditCardId: input.creditCardId || null,
+    firstStatus: input.status,
+  };
+}
+
+// Até onde gerar ocorrências logo na criação: o fim do mês corrente (ou do mês da primeira
+// ocorrência, se ela for futura). Os meses seguintes só são gerados ao serem visualizados.
+function initialMaterializationDate(startDate) {
+  const currentMonthEnd = endOfMonth(todayISODate());
+  const startMonthEnd = endOfMonth(startDate);
+  return startMonthEnd > currentMonthEnd ? startMonthEnd : currentMonthEnd;
+}
+
 export async function createInstallmentSeries(spaceId, input) {
   const user = getCurrentUser();
   const timestamp = nowISOTimestamp();
-  const seriesId = createId();
-
   const amounts = buildInstallmentAmounts(input.totalAmountCents, input.installmentsTotal);
-  const dates = buildInstallmentDates(input.date, input.installmentsTotal);
 
   const series = {
-    id: seriesId,
+    id: createId(),
     spaceId,
     kind: 'installment',
     installmentsTotal: input.installmentsTotal,
+    installmentAmountsCents: amounts.map((amount) => signedAmount(input.kind, amount)),
+    template: buildSeriesTemplate(input, signedAmount(input.kind, amounts[0])),
     frequency: 'monthly',
     startDate: input.date,
     endDate: null,
     paused: false,
+    resumeFrom: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     createdBy: user.uid,
@@ -134,47 +155,25 @@ export async function createInstallmentSeries(spaceId, input) {
     version: 1,
   };
   await putRecord('transactionSeries', series);
-
-  const transactions = [];
-  for (let index = 0; index < amounts.length; index += 1) {
-    const target = await resolvePaymentTarget(spaceId, input, dates[index]);
-    transactions.push({
-      id: createId(),
-      ...baseTransactionFields({ spaceId, userId: user.uid, timestamp }),
-      kind: input.kind,
-      description: input.description || '',
-      amountCents: signedAmount(input.kind, amounts[index]),
-      date: dates[index],
-      categoryId: input.categoryId || null,
-      ...target,
-      status: index === 0 ? input.status : 'pending',
-      seriesId,
-      installmentNumber: index + 1,
-    });
-  }
-
-  for (const transaction of transactions) {
-    await putRecord('transactions', transaction);
-  }
-
+  const transactions = await materializeSeries(spaceId, series, [], initialMaterializationDate(input.date));
   return { series, transactions };
 }
 
 export async function createRecurringSeries(spaceId, input) {
   const user = getCurrentUser();
   const timestamp = nowISOTimestamp();
-  const seriesId = createId();
-  const horizonEndDate = addMonths(input.date, RECURRING_HORIZON_MONTHS);
 
   const series = {
-    id: seriesId,
+    id: createId(),
     spaceId,
     kind: 'recurring',
     installmentsTotal: null,
+    template: buildSeriesTemplate(input, signedAmount(input.kind, input.amountCents)),
     frequency: input.frequency,
     startDate: input.date,
     endDate: input.endDate || null,
     paused: false,
+    resumeFrom: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     createdBy: user.uid,
@@ -183,31 +182,104 @@ export async function createRecurringSeries(spaceId, input) {
     version: 1,
   };
   await putRecord('transactionSeries', series);
+  const transactions = await materializeSeries(spaceId, series, [], initialMaterializationDate(input.date));
+  return { series, transactions };
+}
 
-  const dates = buildRecurringDates(input.date, input.frequency, input.endDate, horizonEndDate);
-  const transactions = [];
-  for (let index = 0; index < dates.length; index += 1) {
-    const target = await resolvePaymentTarget(spaceId, input, dates[index]);
-    transactions.push({
+// Cria (de fato, no banco) as ocorrências ainda inexistentes de uma série até "throughDate".
+// "existing" são as ocorrências já gravadas da série, incluindo as excluídas.
+async function materializeSeries(spaceId, series, existing, throughDate) {
+  const planned = planMissingOccurrences(series, existing, throughDate);
+  if (planned.length === 0) return [];
+
+  const template = series.template;
+  const user = getCurrentUser();
+  const timestamp = nowISOTimestamp();
+  const created = [];
+
+  for (const occurrence of planned) {
+    const target = await resolvePaymentTarget(spaceId, template, occurrence.date);
+    const isFirst = series.kind === 'installment' ? occurrence.installmentNumber === 1 : occurrence.date === series.startDate;
+    const transaction = {
       id: createId(),
       ...baseTransactionFields({ spaceId, userId: user.uid, timestamp }),
-      kind: input.kind,
-      description: input.description || '',
-      amountCents: signedAmount(input.kind, input.amountCents),
-      date: dates[index],
-      categoryId: input.categoryId || null,
+      kind: template.kind,
+      description: template.description || '',
+      amountCents: occurrence.amountCents,
+      date: occurrence.date,
+      categoryId: template.categoryId || null,
       ...target,
-      status: index === 0 ? input.status : 'pending',
-      seriesId,
-      installmentNumber: null,
-    });
-  }
-
-  for (const transaction of transactions) {
+      status: isFirst && template.firstStatus ? template.firstStatus : 'pending',
+      seriesId: series.id,
+      installmentNumber: occurrence.installmentNumber,
+    };
     await putRecord('transactions', transaction);
+    created.push(transaction);
+  }
+  return created;
+}
+
+// Séries criadas antes da geração sob demanda não têm "template": ele é reconstruído a partir
+// da ocorrência mais recente, para que essas recorrências também continuem sendo geradas.
+function withLegacyTemplate(series, existing) {
+  if (series.template || series.kind !== 'recurring') return series;
+  const latest = existing.filter((transaction) => !transaction.deletedAt).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  if (!latest) return series;
+  return {
+    ...series,
+    template: {
+      kind: latest.kind,
+      description: latest.description || '',
+      amountCents: latest.amountCents,
+      categoryId: latest.categoryId || null,
+      accountId: latest.accountId || null,
+      creditCardId: latest.creditCardId || null,
+      firstStatus: null,
+    },
+  };
+}
+
+// Garante que todas as séries ativas do espaço tenham suas ocorrências geradas até
+// "throughDate" (normalmente o último dia do mês sendo visualizado). Chamado ao abrir/navegar
+// a tela de Lançamentos e a Visão geral — é isso que faz as parcelas e recorrências "aparecerem"
+// conforme o usuário avança os meses, sem criar tudo antecipadamente.
+export async function ensureOccurrencesThrough(spaceId, throughDate) {
+  const [seriesList, transactions] = await Promise.all([
+    getAllByIndex('transactionSeries', 'bySpace', spaceId),
+    getAllByIndex('transactions', 'bySpace', spaceId),
+  ]);
+  const bySeries = new Map();
+  for (const transaction of transactions) {
+    if (!transaction.seriesId) continue;
+    if (!bySeries.has(transaction.seriesId)) bySeries.set(transaction.seriesId, []);
+    bySeries.get(transaction.seriesId).push(transaction);
   }
 
-  return { series, transactions };
+  let createdCount = 0;
+  for (const series of seriesList) {
+    if (series.deletedAt) continue;
+    const existing = bySeries.get(series.id) || [];
+    const created = await materializeSeries(spaceId, withLegacyTemplate(series, existing), existing, throughDate);
+    createdCount += created.length;
+  }
+  return createdCount;
+}
+
+// Valor das parcelas de cartão ainda não geradas, por cartão — já comprometem o limite.
+export async function pendingInstallmentCentsByCard(spaceId) {
+  const [seriesList, transactions] = await Promise.all([
+    getAllByIndex('transactionSeries', 'bySpace', spaceId),
+    getAllByIndex('transactions', 'bySpace', spaceId),
+  ]);
+  const totals = new Map();
+  for (const series of seriesList) {
+    const cardId = series.template?.creditCardId;
+    if (!cardId) continue;
+    const existing = transactions.filter((transaction) => transaction.seriesId === series.id);
+    const pending = unmaterializedInstallmentCents(series, existing);
+    if (pending > 0) totals.set(cardId, (totals.get(cardId) || 0) + pending);
+  }
+  return totals;
 }
 
 async function getSeriesSiblings(spaceId, seriesId) {
@@ -265,6 +337,25 @@ export async function updateTransactionScoped(spaceId, transactionId, changes, {
     });
   }
 
+  // "Este e os próximos" / "todos" também atualiza o molde da série, para que as ocorrências
+  // geradas depois (ao visualizar meses futuros) já nasçam com os dados novos.
+  if (current.seriesId && scope !== 'only') {
+    const series = await getRecord('transactionSeries', current.seriesId);
+    if (series && series.template) {
+      const templateChanges = {};
+      for (const field of ['description', 'categoryId', 'accountId']) {
+        if (field in changes && !(field === 'accountId' && series.template.creditCardId)) templateChanges[field] = changes[field];
+      }
+      await putRecord('transactionSeries', {
+        ...series,
+        template: { ...series.template, ...templateChanges },
+        updatedAt: now,
+        updatedBy: user.uid,
+        version: series.version + 1,
+      });
+    }
+  }
+
   return { updatedCount: toApply.length, skippedCount: skipped.length };
 }
 
@@ -282,11 +373,21 @@ export async function deleteTransactionScoped(spaceId, transactionId, { scope = 
     await putRecord('transactions', { ...transaction, deletedAt: now, updatedAt: now, updatedBy: user.uid, version: transaction.version + 1 });
   }
 
-  // "Esta e as próximas" ou "toda a série" interrompe a geração de novas ocorrências futuras.
+  // "Esta e as próximas" ou "toda a série" encerra a série na véspera desta ocorrência, para
+  // que as ocorrências futuras (ainda não geradas) nunca venham a ser criadas.
   if (current.seriesId && (scope === 'following' || scope === 'all')) {
     const series = await getRecord('transactionSeries', current.seriesId);
-    if (series && series.kind === 'recurring' && !series.paused) {
-      await putRecord('transactionSeries', { ...series, paused: true, updatedAt: now, updatedBy: user.uid, version: series.version + 1 });
+    if (series) {
+      const cutoff = addDays(scope === 'all' ? series.startDate : current.date, -1);
+      const endDate = series.endDate && series.endDate < cutoff ? series.endDate : cutoff;
+      await putRecord('transactionSeries', {
+        ...series,
+        endDate,
+        paused: series.kind === 'recurring' ? true : series.paused,
+        updatedAt: now,
+        updatedBy: user.uid,
+        version: series.version + 1,
+      });
     }
   }
 
@@ -311,53 +412,13 @@ export async function endRecurringSeries(seriesId, endDate) {
   return updated;
 }
 
-// Gera as próximas ocorrências que ainda não existem para uma recorrência ativa (ex.: ao
-// retomá-la) — nunca duplica uma data já existente, nunca gera além do horizonte de 12 meses.
-export async function generateUpcomingOccurrences(spaceId, seriesId) {
-  const series = await getRecord('transactionSeries', seriesId);
-  if (!series || series.kind !== 'recurring' || series.paused) return [];
-
-  const existing = await getSeriesSiblings(spaceId, seriesId);
-  if (existing.length === 0) return [];
-
-  const existingDates = new Set(existing.map((transaction) => transaction.date));
-  const referenceDate = existing.reduce((latest, transaction) => (transaction.date > latest ? transaction.date : latest), series.startDate);
-  const horizonEndDate = addMonths(todayISODate(), RECURRING_HORIZON_MONTHS);
-
-  const allDates = buildRecurringDates(series.startDate, series.frequency, series.endDate, horizonEndDate);
-  const newDates = allDates.filter((date) => date > referenceDate && !existingDates.has(date));
-  if (newDates.length === 0) return [];
-
-  const template = existing[0];
-  const card = template.creditCardId ? await getRecord('creditCards', template.creditCardId) : null;
-  const user = getCurrentUser();
-  const timestamp = nowISOTimestamp();
-  const created = [];
-
-  for (const date of newDates) {
-    const invoiceId = card ? (await getOrCreateInvoice(spaceId, card, date)).id : null;
-    const transaction = {
-      ...template,
-      id: createId(),
-      date,
-      invoiceId,
-      status: 'pending',
-      installmentNumber: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      createdBy: user.uid,
-      updatedBy: user.uid,
-      deletedAt: null,
-      version: 1,
-    };
-    await putRecord('transactions', transaction);
-    created.push(transaction);
-  }
-
-  return created;
-}
-
+// Retomar não gera de volta o período em que a recorrência ficou pausada: a geração recomeça a
+// partir de hoje, e as próximas ocorrências surgem conforme os meses forem visualizados.
 export async function resumeRecurringSeries(spaceId, seriesId) {
-  await setSeriesPaused(seriesId, false);
-  return generateUpcomingOccurrences(spaceId, seriesId);
+  const series = await getRecord('transactionSeries', seriesId);
+  if (!series) throw new Error('Série não encontrada.');
+  const user = getCurrentUser();
+  const updated = { ...series, paused: false, resumeFrom: todayISODate(), updatedAt: nowISOTimestamp(), updatedBy: user.uid, version: series.version + 1 };
+  await putRecord('transactionSeries', updated);
+  return ensureOccurrencesThrough(spaceId, endOfMonth(todayISODate()));
 }

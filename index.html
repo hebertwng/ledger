@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LEDGER</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icons/ledger.svg" />
+  <link rel="apple-touch-icon" href="assets/icons/ledger.svg" />
+  <meta name="theme-color" content="#1d4ed8" />
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -27,6 +30,7 @@
   <div class="app-shell">
     <header class="app-header">
       <div class="app-header__brand">
+        <img class="app-header__mark" src="assets/icons/ledger.svg" alt="" width="30" height="30" />
         <span class="app-header__logo">LEDGER</span>
         <span class="app-header__tagline" data-i18n="app.tagline"></span>
       </div>
@@ -42,19 +46,19 @@
     <div class="app-body">
       <nav id="app-nav" class="app-nav">
         <div class="app-nav__group">
-          <a href="#/dashboard" data-route="/dashboard" data-i18n="nav.dashboard"></a>
-          <a href="#/transactions" data-route="/transactions" data-i18n="nav.transactions"></a>
-          <a href="#/transfers" data-route="/transfers" data-i18n="nav.transfers"></a>
-          <a href="#/invoices" data-route="/invoices" data-i18n="nav.invoices"></a>
-          <a href="#/budgets" data-route="/budgets" data-i18n="nav.budgets"></a>
-          <a href="#/reports" data-route="/reports" data-i18n="nav.reports"></a>
+          <a href="#/dashboard" data-route="/dashboard" title=""><span class="app-nav__icon" data-icon="overview"></span><span class="app-nav__label" data-i18n="nav.dashboard"></span></a>
+          <a href="#/transactions" data-route="/transactions" title=""><span class="app-nav__icon" data-icon="transactions"></span><span class="app-nav__label" data-i18n="nav.transactions"></span></a>
+          <a href="#/transfers" data-route="/transfers" title=""><span class="app-nav__icon" data-icon="transfers"></span><span class="app-nav__label" data-i18n="nav.transfers"></span></a>
+          <a href="#/invoices" data-route="/invoices" title=""><span class="app-nav__icon" data-icon="invoices"></span><span class="app-nav__label" data-i18n="nav.invoices"></span></a>
+          <a href="#/budgets" data-route="/budgets" title=""><span class="app-nav__icon" data-icon="budgets"></span><span class="app-nav__label" data-i18n="nav.budgets"></span></a>
+          <a href="#/reports" data-route="/reports" title=""><span class="app-nav__icon" data-icon="reports"></span><span class="app-nav__label" data-i18n="nav.reports"></span></a>
         </div>
         <hr class="app-nav__divider" />
         <div class="app-nav__group">
-          <a href="#/accounts" data-route="/accounts" data-i18n="nav.accounts"></a>
-          <a href="#/credit-cards" data-route="/credit-cards" data-i18n="nav.creditCards"></a>
-          <a href="#/categories" data-route="/categories" data-i18n="nav.categories"></a>
-          <a href="#/settings" data-route="/settings" data-i18n="nav.settings"></a>
+          <a href="#/accounts" data-route="/accounts" title=""><span class="app-nav__icon" data-icon="accounts"></span><span class="app-nav__label" data-i18n="nav.accounts"></span></a>
+          <a href="#/credit-cards" data-route="/credit-cards" title=""><span class="app-nav__icon" data-icon="creditCards"></span><span class="app-nav__label" data-i18n="nav.creditCards"></span></a>
+          <a href="#/categories" data-route="/categories" title=""><span class="app-nav__icon" data-icon="categories"></span><span class="app-nav__label" data-i18n="nav.categories"></span></a>
+          <a href="#/settings" data-route="/settings" title=""><span class="app-nav__icon" data-icon="settings"></span><span class="app-nav__label" data-i18n="nav.settings"></span></a>
         </div>
       </nav>
       <main id="app-main" class="app-main"></main>

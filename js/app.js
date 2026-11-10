@@ -2,6 +2,11 @@ import { openDatabase } from './core/database.js';
 import { ensureDefaultSpace } from './core/bootstrap.js';
 import { registerRoute, initRouter } from './core/router.js';
 import { t, getLocale, setLocale, onLocaleChange, SUPPORTED_LOCALES } from './core/i18n.js';
+import { hydrateIcons } from './utils/icons.js';
+import { ensureOccurrencesThrough } from './services/transactionRepository.js';
+import { getActiveSpace } from './core/bootstrap.js';
+import { todayISODate } from './utils/dates.js';
+import { endOfMonth } from './utils/recurrence.js';
 import { getAppState, onAppStateChange, getConnectivity, onConnectivityChange } from './core/app-state.js';
 
 import * as dashboardModule from './modules/dashboard/index.js';
@@ -22,6 +27,11 @@ function renderStaticText() {
   document.documentElement.lang = getLocale();
   document.querySelectorAll('[data-i18n]').forEach((element) => {
     element.textContent = t(element.getAttribute('data-i18n'));
+  });
+  // No menu, o nome também vira "title" — útil quando o menu fica estreito em telas pequenas.
+  document.querySelectorAll('.app-nav a').forEach((link) => {
+    const label = link.querySelector('[data-i18n]');
+    if (label) link.title = label.textContent;
   });
 }
 
@@ -51,6 +61,11 @@ async function bootstrapApp() {
   await openDatabase();
   await ensureDefaultSpace();
 
+  // Parcelas e recorrências são geradas sob demanda: ao abrir o app, garante só as do mês atual
+  // (ex.: a mensalidade de um novo mês aparece sozinha quando o mês vira).
+  const activeSpace = await getActiveSpace();
+  if (activeSpace) await ensureOccurrencesThrough(activeSpace.id, endOfMonth(todayISODate()));
+
   registerRoute('/dashboard', dashboardModule.render);
   registerRoute('/accounts', accountsModule.render);
   registerRoute('/transactions', transactionsModule.render);
@@ -68,6 +83,7 @@ async function bootstrapApp() {
   });
 }
 
+hydrateIcons();
 renderStaticText();
 setupLanguageSwitcher();
 renderStateBadges();

@@ -84,3 +84,19 @@ export async function updateAccount(accountId, changes) {
 export async function setAccountArchived(accountId, archived) {
   return updateAccount(accountId, { archived });
 }
+
+// Pura: saldo de um conjunto de contas ao final de uma data — "confirmado" (só o que já foi
+// pago/recebido até lá) e "previsto" (inclui o que ainda está pendente até lá). Usado no
+// rodapé da tela de Lançamentos ao navegar pelos meses.
+export function calculateBalancesAtDate(accounts, transactions, endDate) {
+  const accountIds = new Set(accounts.map((account) => account.id));
+  let confirmedCents = accounts.reduce((sum, account) => sum + (account.initialBalanceCents || 0), 0);
+  let projectedCents = confirmedCents;
+  for (const transaction of transactions) {
+    if (!accountIds.has(transaction.accountId) || transaction.deletedAt || transaction.status === 'cancelled') continue;
+    if (transaction.date > endDate) continue;
+    projectedCents += transaction.amountCents;
+    if (SETTLED_STATUSES.has(transaction.status)) confirmedCents += transaction.amountCents;
+  }
+  return { confirmedCents, projectedCents };
+}
