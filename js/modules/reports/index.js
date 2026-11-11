@@ -300,7 +300,7 @@ function renderCashflowTab(body, context) {
     data: {
       labels: series.map((entry) => formatReferenceMonth(entry.month, locale)),
       datasets: [
-        { type: 'bar', label: t('reports.column.income'), data: series.map((entry) => entry.incomeCents / 100), backgroundColor: cssVar('--color-primary'), borderRadius: 6, maxBarThickness: 22 },
+        { type: 'bar', label: t('reports.column.income'), data: series.map((entry) => entry.incomeCents / 100), backgroundColor: cssVar('--color-success'), borderRadius: 6, maxBarThickness: 22 },
         { type: 'bar', label: t('reports.column.expense'), data: series.map((entry) => entry.expenseCents / 100), backgroundColor: cssVar('--color-danger'), borderRadius: 6, maxBarThickness: 22 },
         { type: 'line', label: t('reports.column.accumulated'), data: accumulatedSeries.map((value) => value / 100), borderColor: cssVar('--color-text'), backgroundColor: cssVar('--color-text'), tension: 0.3, pointRadius: 3 },
       ],

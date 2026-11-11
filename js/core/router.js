@@ -25,12 +25,24 @@ function currentPath() {
   return hash || FALLBACK_PATH;
 }
 
+let enteringTimer = null;
+
+// Só a troca de tela marca o conteúdo com .is-entering (animação de entrada em css/motion.css).
+// Os redesenhos internos de cada tela (filtros, mês, salvar) não passam por aqui e não animam.
+export function isRouteEntering() {
+  return Boolean(outletElement?.classList.contains('is-entering'));
+}
+
 function renderCurrentRoute() {
   const path = currentPath();
   const render = routes.get(path) || routes.get(FALLBACK_PATH);
 
+  clearTimeout(enteringTimer);
+  outletElement.classList.add('is-entering');
   outletElement.innerHTML = '';
-  render(outletElement);
+  Promise.resolve(render(outletElement)).finally(() => {
+    enteringTimer = setTimeout(() => outletElement.classList.remove('is-entering'), 900);
+  });
 
   for (const link of navLinks) {
     link.classList.toggle('is-active', link.getAttribute('data-route') === path);

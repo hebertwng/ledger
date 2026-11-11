@@ -39,13 +39,21 @@ Configurações indica em qual etapa chega.
 
 ### Leiaute
 
-- **Menu lateral flutuante** (cartão arredondado à esquerda), sempre lateral em qualquer largura:
+- **Identidade visual própria** (`css/brand.css`): azul do logotipo com degradê azul→violeta nos
+  destaques, fonte Manrope, receitas em verde e despesas em vermelho, cartões brancos com sombra
+  suave sobre fundo frio.
+- **Menu lateral escuro** à esquerda, de altura total, sempre lateral em qualquer largura:
   uso frequente (Visão geral, Lançamentos, Relatórios, Limite de gastos, Transferências, Faturas)
   separado dos cadastros (Contas, Cartões, Categorias, Configurações). Mostra quantas contas e
   cartões ativos existem, pode ser recolhido para só ícones (a escolha fica salva) e, no rodapé,
   traz o espaço ativo, o modo (local/online) e o seletor de idioma. Em telas estreitas vira uma
   faixa de ícones.
-- **Cada tela é um cartão** sobre fundo neutro; a Visão geral é uma grade de painéis.
+- **Cada tela é um cartão**; a Visão geral é uma grade de painéis recolhíveis, com o resumo do mês
+  num cartão em degradê.
+- **Animações** (`css/motion.css`): entrada suave ao trocar de tela com itens em cascata, barras
+  que crescem, valores da Visão geral que contam até o total, botões que reagem ao toque, joinha
+  que "pula" ao marcar pago, janelas que abrem e fecham com efeito de mola (no celular sobem da
+  base) e troca gradual de tema. Tudo é desligado quando o sistema pede movimento reduzido.
 - **Modo escuro**: chave na Visão geral; sem escolha salva, segue o sistema operacional. Todas as
   cores são variáveis CSS em `css/main.css` (`--color-primary` define a cor de destaque).
 - **Responsivo**: no celular, os formulários abrem como painel de tela cheia e as listas ficam
@@ -117,7 +125,7 @@ compra.
 Os gráficos usam **Chart.js 4.4.1 via CDN** (`cdnjs.cloudflare.com`) — a única dependência
 externa do projeto, baixada quando a página carrega com acesso à internet. Sem conexão, os
 indicadores, listas e tabelas continuam funcionando; só os gráficos ficam em branco (sem erro). A
-fonte Inter também vem do Google Fonts e, offline, cai para a fonte do sistema.
+fonte Manrope também vem do Google Fonts e, offline, cai para a fonte do sistema.
 
 
 ### Simplificações deliberadas da Etapa 5
@@ -184,14 +192,15 @@ ficará disponível na tela de Configurações, com migração dos dados locais 
 ```
 index.html
 assets/icons/   ícone do LEDGER e logos de instituições financeiras (contas e cartões)
-css/            estilos (main: cores/tema, layout: casca e menu, components, reports, responsive)
+css/            estilos (main: cores/tema, layout: casca e menu, components, reports, brand: identidade,
+                responsive, motion: animações)
 js/
   app.js        ponto de entrada
   core/         database (IndexedDB), router, i18n, theme, app-state, auth, permissions, sync, bootstrap
   locales/      dicionários pt-BR e en-US
   modules/      uma pasta por tela (dashboard, accounts, transactions, budgets, ...)
   services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets) — regras de negócio
-  utils/        ids, currency, moneyInput, dates, validation, html, observable, recurrence, csv, icons,
+  utils/        ids, currency, moneyInput, motion, dates, validation, html, observable, recurrence, csv, icons,
                 ui (ícones de categoria/instituição, seletores, modal), categoryCombo (seletor de categoria)
 tools/          servidor estático de desenvolvimento
 tests/          testes de unidade (node --test)

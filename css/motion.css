@@ -1,0 +1,328 @@
+/* ==========================================================================
+   Animações. Tudo aqui fica desligado para quem pede menos movimento no
+   sistema operacional (prefers-reduced-motion).
+   ========================================================================== */
+
+/* Mudança de tema: cores deslizam em vez de piscar. */
+body,
+.view,
+.ov-panel,
+.card,
+.tx-filters,
+.sidebar {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ---------- Entrada de tela (o router marca .is-entering ao trocar de rota) ---------- */
+  .app-main.is-entering > * {
+    animation: view-in 0.45s var(--ease-out) both;
+  }
+
+  /* Itens entram em cascata. */
+  .is-entering .ov-summary,
+  .is-entering .ov-panel,
+  .is-entering .tx-row,
+  .is-entering .tx-date-header,
+  .is-entering .entity-row,
+  .is-entering .rp-rank > li,
+  .is-entering .rp-kpi,
+  .is-entering .data-table tbody tr {
+    animation: item-in 0.5s var(--ease-out) both;
+  }
+
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(1) { animation-delay: 0.04s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(2) { animation-delay: 0.08s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(3) { animation-delay: 0.12s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(4) { animation-delay: 0.16s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(5) { animation-delay: 0.2s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(6) { animation-delay: 0.24s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(7) { animation-delay: 0.28s; }
+  .is-entering :is(.ov-column, .tx-list, .entity-list, .rp-rank, .rp-kpis, tbody) > :nth-child(n + 8) { animation-delay: 0.32s; }
+  .is-entering .ov-column:nth-child(2) > * { animation-delay: 0.1s; }
+
+  /* Barras de progresso e de proporção crescem a partir da esquerda. */
+  .is-entering .progress-bar__fill,
+  .is-entering .rp-rank__bar span {
+    transform-origin: left center;
+    animation: bar-grow 0.8s var(--ease-out) 0.15s both;
+  }
+
+  /* ---------- Botões ---------- */
+  .button,
+  .link-button,
+  .icon-button,
+  .fab-save,
+  .tx-form__extra,
+  .segmented__option,
+  .status-toggle,
+  .filter-chip select {
+    transition: transform 0.16s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, filter 0.2s ease;
+  }
+
+  .button:not(:disabled):hover,
+  .fab-save:hover {
+    transform: translateY(-1px);
+  }
+
+  .button--dark:not(:disabled):hover,
+  .button--primary:not(:disabled):hover,
+  .fab-save:hover {
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--color-primary) 38%, transparent);
+  }
+
+  .button:not(:disabled):active,
+  .link-button:active,
+  .icon-button:active,
+  .tx-form__extra:active,
+  .segmented__option:active {
+    transform: scale(0.95);
+    transition-duration: 0.06s;
+  }
+
+  .fab-save:active {
+    transform: scale(0.9);
+    transition-duration: 0.06s;
+  }
+
+  .status-toggle:hover {
+    transform: scale(1.12) rotate(-8deg);
+  }
+
+  .status-toggle:active {
+    transform: scale(0.85);
+  }
+
+  /* Joinha recém-marcado dá um "pulo". */
+  .status-toggle.just-toggled svg {
+    animation: thumb-pop 0.5s var(--ease-spring);
+  }
+
+  .status-toggle.just-toggled.is-settled::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--color-success);
+    animation: ring-out 0.55s var(--ease-out) forwards;
+    pointer-events: none;
+  }
+
+  .status-toggle {
+    position: relative;
+  }
+
+  /* ---------- Superfícies interativas ---------- */
+  .ov-panel,
+  .rp-kpi,
+  .rp-block,
+  .rp-top__item {
+    transition: box-shadow 0.25s var(--ease-out), transform 0.25s var(--ease-out), background-color 0.3s ease;
+  }
+
+  .ov-panel:hover,
+  .rp-block:hover {
+    box-shadow: var(--shadow-hover);
+  }
+
+  .rp-kpi:hover,
+  .rp-top__item:hover {
+    transform: translateY(-2px);
+  }
+
+  .tx-row,
+  .entity-row,
+  .rp-rank__row,
+  .combo__option,
+  .menu__item {
+    transition: background-color 0.18s ease, transform 0.18s var(--ease-out);
+  }
+
+  .tx-row:hover,
+  .entity-row--clickable:hover {
+    transform: translateX(3px);
+  }
+
+  .tx-row .entity-icon,
+  .entity-row .entity-icon {
+    transition: transform 0.25s var(--ease-spring);
+  }
+
+  .tx-row:hover .entity-icon,
+  .entity-row--clickable:hover .entity-icon {
+    transform: scale(1.08);
+  }
+
+  .ov-panel__header .icon-button svg,
+  .rp-rank__row > .icon:last-child {
+    transition: transform 0.3s var(--ease-out);
+  }
+
+  .ov-panel__header .icon-button:hover svg {
+    transform: translateY(-1px);
+  }
+
+  /* Painel recolhível: conteúdo surge suavemente ao expandir. */
+  .ov-panel:not(.is-collapsed) .ov-panel__body.just-expanded {
+    animation: expand-in 0.35s var(--ease-out);
+  }
+
+  .rp-rank__children {
+    animation: expand-in 0.3s var(--ease-out);
+  }
+
+  /* ---------- Modal, menus e listas suspensas ---------- */
+  .modal-overlay {
+    animation: overlay-in 0.22s ease-out both;
+    backdrop-filter: blur(3px);
+  }
+
+  .modal,
+  .modal-dialog {
+    animation: modal-in 0.38s var(--ease-spring) both;
+  }
+
+  .modal-overlay.is-closing {
+    animation: overlay-out 0.18s ease-in both;
+  }
+
+  .modal-overlay.is-closing .modal {
+    animation: modal-out 0.18s ease-in both;
+  }
+
+  .menu__panel {
+    transform-origin: top left;
+    animation: menu-in 0.22s var(--ease-out) both;
+  }
+
+  .menu__item {
+    animation: item-in 0.3s var(--ease-out) both;
+  }
+
+  .menu__item:nth-child(2) { animation-delay: 0.04s; }
+  .menu__item:nth-child(3) { animation-delay: 0.08s; }
+
+  .combo__panel {
+    transform-origin: top center;
+    animation: menu-in 0.2s var(--ease-out) both;
+  }
+
+  .tx-form__section,
+  .tx-filters__more {
+    animation: expand-in 0.32s var(--ease-out) both;
+  }
+
+  .switch__track::after {
+    transition: transform 0.3s var(--ease-spring);
+  }
+
+  .icon-picker__option span,
+  .color-picker__option span {
+    transition: transform 0.2s var(--ease-spring), background-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .icon-picker__option:hover span,
+  .color-picker__option:hover span {
+    transform: scale(1.1);
+  }
+
+  .icon-picker__option input:checked + span,
+  .color-picker__option input:checked + span {
+    transform: scale(1.12);
+  }
+
+  /* ---------- Menu lateral ---------- */
+  .sidebar__section a .sidebar__icon {
+    transition: transform 0.25s var(--ease-spring), color 0.2s ease;
+  }
+
+  .sidebar__section a:hover .sidebar__icon {
+    transform: scale(1.12);
+  }
+
+  .sidebar__section a.is-active .sidebar__icon {
+    animation: icon-bounce 0.45s var(--ease-spring);
+  }
+}
+
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes item-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-out {
+  to { opacity: 0; }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes modal-out {
+  to { opacity: 0; transform: translateY(10px) scale(0.97); }
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes expand-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes thumb-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.45) rotate(-14deg); }
+  65% { transform: scale(0.9) rotate(4deg); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ring-out {
+  from { opacity: 0.7; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(1.7); }
+}
+
+@keyframes icon-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* No celular o modal sobe da base da tela. */
+@media (max-width: 560px) and (prefers-reduced-motion: no-preference) {
+  .modal,
+  .modal-dialog {
+    animation: sheet-in 0.35s var(--ease-out) both;
+  }
+
+  .modal-overlay.is-closing .modal {
+    animation: sheet-out 0.2s ease-in both;
+  }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@keyframes sheet-out {
+  to { transform: translateY(100%); }
+}

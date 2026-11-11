@@ -40,6 +40,8 @@ let formState = null;
 let scopeState = null;
 let keydownHandler = null;
 let newMenuOpen = false;
+// Lançamento cujo joinha acabou de ser clicado — ganha a animação de "pulo" no próximo desenho.
+let justToggledId = null;
 
 // Mês exibido na tela (YYYY-MM). Navegar para um mês futuro é o que dispara a geração das
 // parcelas/recorrências daquele mês — elas não são criadas todas de uma vez.
@@ -523,7 +525,7 @@ function rowHtml(transaction, context) {
       ${seriesBadgeHtml(transaction, seriesById)}
       <span class="tx-row__target">${paymentTargetHtml(transaction, context)}</span>
       <div class="tx-row__amount">${centsToDisplay(transaction.amountCents, locale)}</div>
-      <button type="button" class="status-toggle ${isSettled ? 'is-settled' : ''}" data-toggle-paid-id="${transaction.id}" title="${toggleTitle}" aria-label="${toggleTitle}" aria-pressed="${isSettled}" ${isCancelled ? 'disabled' : ''}>${iconSvg('thumbsUp', { size: 18 })}</button>
+      <button type="button" class="status-toggle ${isSettled ? 'is-settled' : ''} ${justToggledId === transaction.id ? 'just-toggled' : ''}" data-toggle-paid-id="${transaction.id}" title="${toggleTitle}" aria-label="${toggleTitle}" aria-pressed="${isSettled}" ${isCancelled ? 'disabled' : ''}>${iconSvg('thumbsUp', { size: 18 })}</button>
       <div class="tx-row__actions">
         ${seriesActionsHtml(transaction, seriesById)}
         <button type="button" class="icon-button icon-button--danger" data-delete-id="${transaction.id}" title="${t('common.delete')}" aria-label="${t('common.delete')}">${iconSvg('trash', { size: 16 })}</button>
@@ -570,7 +572,9 @@ async function toggleQuickPay(context, transactionId) {
     const nextStatus = transaction.kind === 'income' ? 'received' : 'paid';
     await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: nextStatus }, { scope: 'only', includePaid: false });
   }
-  render(context.container);
+  justToggledId = transaction.id;
+  await render(context.container);
+  justToggledId = null;
 }
 
 function editDraft(transaction) {

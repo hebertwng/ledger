@@ -135,9 +135,19 @@ export function openModal(slot, { title, body, size = 'md', onClose }) {
     </div>
   `;
   const overlay = slot.querySelector('[data-modal-overlay]');
+  let closing = false;
+  // Fecha com animação de saída (css/motion.css) e só então avisa a tela.
   const close = () => {
+    if (closing) return;
+    closing = true;
     document.removeEventListener('keydown', onKey);
-    onClose?.();
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      onClose?.();
+      return;
+    }
+    overlay.classList.add('is-closing');
+    setTimeout(() => onClose?.(), 170);
   };
   const onKey = (event) => {
     // A tela pode ter sido redesenhada (ex.: depois de salvar) sem passar por close().

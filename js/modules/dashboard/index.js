@@ -14,7 +14,8 @@ import { addMonths } from '../../utils/recurrence.js';
 import { escapeHtml } from '../../utils/html.js';
 import { iconSvg } from '../../utils/icons.js';
 import { categoryIconHtml, institutionIconHtml, colorFromText } from '../../utils/ui.js';
-import { navigateTo } from '../../core/router.js';
+import { navigateTo, isRouteEntering } from '../../core/router.js';
+import { countUpMoney } from '../../utils/motion.js';
 import { openCreateForm, setTransactionsMonth } from '../transactions/index.js';
 
 // Visão geral: saudação e período, resumo do mês com atalhos, maiores gastos, contas a pagar e a
@@ -24,6 +25,8 @@ let periodState = todayISODate().slice(0, 7);
 const HIDE_VALUES_KEY = 'ledger.hideValues';
 const COLLAPSED_KEY = 'ledger.overviewCollapsed';
 const UPCOMING_LIMIT = 5;
+// Painel que acabou de ser expandido (anima o conteúdo surgindo).
+let justExpandedId = null;
 
 function readStorage(key, fallback) {
   try {
@@ -84,7 +87,7 @@ function panelHtml(id, title, body, collapsed) {
         <h2>${title}</h2>
         <button type="button" class="icon-button" data-collapse="${id}" aria-expanded="${!collapsed[id]}" title="${collapsed[id] ? t('dashboard.expand') : t('dashboard.collapse')}">${iconSvg(collapsed[id] ? 'chevronDown' : 'chevronUp', { size: 18 })}</button>
       </header>
-      <div class="ov-panel__body">${body}</div>
+      <div class="ov-panel__body ${justExpandedId === id ? 'just-expanded' : ''}">${body}</div>
     </article>
   `;
 }
@@ -208,12 +211,12 @@ export async function render(container) {
         <div class="ov-summary__figures">
           <div class="ov-summary__figure">
             <span class="ov-summary__label">${t('dashboard.monthlyIncome')} <span class="ov-chip ov-chip--income">${iconSvg('arrowUp', { size: 12 })}</span></span>
-            <strong class="ov-summary__value">${money(incomeCents)}</strong>
+            <strong class="ov-summary__value" ${hideValues ? '' : `data-countup="${incomeCents}"`}>${money(incomeCents)}</strong>
           </div>
           <div class="ov-summary__divider"></div>
           <div class="ov-summary__figure">
             <span class="ov-summary__label">${t('dashboard.monthlyExpense')} <span class="ov-chip ov-chip--expense">${iconSvg('arrowDown', { size: 12 })}</span></span>
-            <strong class="ov-summary__value">${money(expenseCents)}</strong>
+            <strong class="ov-summary__value" ${hideValues ? '' : `data-countup="${expenseCents}"`}>${money(expenseCents)}</strong>
           </div>
         </div>
         <div class="ov-summary__actions">
@@ -260,7 +263,7 @@ export async function render(container) {
             `
               <div class="ov-highlight">
                 <span>${t('dashboard.totalBalance')}</span>
-                <strong>${money(totalBalanceCents)}</strong>
+                <strong ${hideValues ? '' : `data-countup="${totalBalanceCents}"`}>${money(totalBalanceCents)}</strong>
                 <small>${t('dashboard.projectedBalance')}: ${money(projectedBalanceCents)}</small>
               </div>
               ${
@@ -370,11 +373,16 @@ export async function render(container) {
     render(container);
   });
 
+  if (isRouteEntering()) countUpMoney(container.querySelector('.ov'), locale);
+
   for (const button of container.querySelectorAll('[data-collapse]')) {
     button.addEventListener('click', () => {
       const id = button.dataset.collapse;
       writeStorage(COLLAPSED_KEY, { ...collapsed, [id]: !collapsed[id] });
-      render(container);
+      justExpandedId = collapsed[id] ? id : null;
+      render(container).finally(() => {
+        justExpandedId = null;
+      });
     });
   }
 
