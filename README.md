@@ -120,6 +120,22 @@ série, para que nada volte a ser gerado. Uma parcela excluída individualmente 
 Parcelas de cartão ainda não geradas continuam contando no **limite utilizado** do cartão desde a
 compra.
 
+### Cópia de segurança e zerar dados
+
+Em **Configurações → Seus dados**, já que tudo fica salvo só no navegador:
+
+- **Baixar cópia de segurança**: arquivo `ledger-copia-AAAA-MM-DD.json` com todas as coleções.
+- **Restaurar cópia**: valida o arquivo, mostra a data e o que ele contém (contas, cartões,
+  categorias, lançamentos) e só substitui os dados atuais depois da confirmação.
+- **Apagar movimentações**: apaga lançamentos, parcelas, recorrências, transferências e faturas;
+  mantém contas, cartões, categorias e limites (os saldos voltam ao saldo inicial).
+- **Apagar todos os dados**: volta ao estado de instalação; ao recarregar, o app recria o espaço
+  com as categorias padrão.
+
+As exclusões oferecem baixar a cópia antes e só são liberadas digitando **APAGAR**. Cada operação
+roda numa única transação do IndexedDB: ou é aplicada inteira, ou nada muda. Tema e idioma são
+preferências e não são apagados.
+
 ### Gráficos exigem internet
 
 Os gráficos usam **Chart.js 4.4.1 via CDN** (`cdnjs.cloudflare.com`) — a única dependência
@@ -199,7 +215,7 @@ js/
   core/         database (IndexedDB), router, i18n, theme, app-state, auth, permissions, sync, bootstrap
   locales/      dicionários pt-BR e en-US
   modules/      uma pasta por tela (dashboard, accounts, transactions, budgets, ...)
-  services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets) — regras de negócio
+  services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets, dataManagement) — regras de negócio
   utils/        ids, currency, moneyInput, motion, dates, validation, html, observable, recurrence, csv, icons,
                 ui (ícones de categoria/instituição, seletores, modal), categoryCombo (seletor de categoria)
 tools/          servidor estático de desenvolvimento
