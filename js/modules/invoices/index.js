@@ -1,4 +1,5 @@
 import { t, getLocale } from '../../core/i18n.js';
+import { iconSvg } from '../../utils/icons.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
 import { listAccounts } from '../../services/accountRepository.js';
 import { listCreditCards } from '../../services/creditCardRepository.js';
@@ -107,8 +108,8 @@ function renderTable(context) {
             ${invoice.status === 'paid' ? `<div class="empty-state__note">${t('invoices.paidOn', { date: formatDateDisplay(invoice.paidAt?.slice(0, 10), locale) })}</div>` : ''}
           </td>
           <td class="table__actions">
-            <button type="button" class="link-button" data-toggle-id="${invoice.id}">${isExpanded ? t('invoices.hidePurchasesButton') : t('invoices.viewPurchasesButton')}</button>
-            ${invoice.status !== 'paid' ? `<button type="button" class="link-button" data-pay-id="${invoice.id}">${t('invoices.payButton')}</button>` : ''}
+            <button type="button" class="link-button" data-toggle-id="${invoice.id}">${iconSvg(isExpanded ? 'chevronUp' : 'chevronDown', { size: 14 })} ${isExpanded ? t('invoices.hidePurchasesButton') : t('invoices.viewPurchasesButton')}</button>
+            ${invoice.status !== 'paid' ? `<button type="button" class="link-button link-button--primary" data-pay-id="${invoice.id}">${iconSvg('check', { size: 14 })} ${t('invoices.payButton')}</button>` : ''}
           </td>
         </tr>
         ${purchasesRow}

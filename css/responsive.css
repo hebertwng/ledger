@@ -1,34 +1,113 @@
-/* O menu de navegação permanece lateral (à esquerda) em qualquer largura de tela,
-   por preferência explícita do usuário; apenas encolhe em telas estreitas. */
-@media (max-width: 768px) {
-  .app-header {
-    flex-wrap: wrap;
+/* O menu de navegação permanece lateral (à esquerda) em qualquer largura de tela, por
+   preferência explícita do usuário; em telas estreitas ele vira só ícones. */
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 84px;
   }
 
-  .app-nav {
-    width: 170px;
+  .sidebar__brand {
+    flex-direction: column;
+    padding: 20px 12px 12px;
   }
 
-  .app-main {
-    padding: var(--space-3);
+  .sidebar__logo span,
+  .sidebar__label,
+  .sidebar__count,
+  .sidebar__profile-text,
+  .sidebar__language select,
+  .sidebar__collapse {
+    display: none;
+  }
+
+  .sidebar__body {
+    padding-inline: 12px;
+  }
+
+  .sidebar__section a {
+    justify-content: center;
+    padding: 10px;
+  }
+
+  .sidebar__profile {
+    justify-content: center;
+    padding: 8px;
+    background: transparent;
+  }
+
+  .sidebar__language {
+    justify-content: center;
+    padding: 0;
   }
 }
 
-@media (max-width: 480px) {
-  .app-header__tagline {
-    display: none;
+@media (max-width: 640px) {
+  .app-shell {
+    gap: 10px;
+    padding: 8px;
   }
 
-  .language-switcher span {
-    display: none;
+  .sidebar {
+    top: 8px;
+    width: 60px;
+    height: calc(100vh - 16px);
+    border-radius: 20px;
   }
 
-  .app-nav {
-    width: 128px;
-    font-size: 0.82rem;
+  .sidebar__body,
+  .sidebar__brand {
+    padding-inline: 6px;
   }
 
-  .app-nav a {
-    padding: var(--space-2) var(--space-1);
+  .sidebar__section a {
+    padding: 8px;
+  }
+
+  .sidebar__avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .page,
+  .view:not(.ov) {
+    padding: 20px 16px;
+    border-radius: 20px;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .sidebar {
+    top: 6px;
+    width: 50px;
+    height: calc(100vh - 12px);
+    border-radius: 16px;
+  }
+
+  .sidebar__body,
+  .sidebar__brand {
+    padding-inline: 4px;
+  }
+
+  .sidebar__logo img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .sidebar__section a {
+    padding: 8px 6px;
+    border-radius: 10px;
+  }
+
+  .view:not(.ov) {
+    padding: 16px 12px;
+    border-radius: 16px;
+  }
+
+  .tx-view.view {
+    padding: 0;
   }
 }

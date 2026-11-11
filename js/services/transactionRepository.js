@@ -65,6 +65,8 @@ export function filterTransactions(transactions, filters = {}) {
     if (filters.accountId && transaction.accountId !== filters.accountId) return false;
     if (filters.creditCardId && transaction.creditCardId !== filters.creditCardId) return false;
     if (filters.categoryId && transaction.categoryId !== filters.categoryId) return false;
+    // Lista de categorias aceitas (ex.: a categoria principal escolhida no filtro + as subcategorias dela).
+    if (Array.isArray(filters.categoryIds) && !filters.categoryIds.includes(transaction.categoryId)) return false;
     if (filters.status && transaction.status !== filters.status) return false;
     if (filters.startDate && transaction.date < filters.startDate) return false;
     if (filters.endDate && transaction.date > filters.endDate) return false;

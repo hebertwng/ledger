@@ -60,6 +60,7 @@ export async function createAccount(spaceId, input) {
     initialBalanceCents: input.initialBalanceCents,
     initialBalanceDate: input.initialBalanceDate,
     color: input.color || null,
+    institution: input.institution || null,
     archived: false,
     createdAt,
     updatedAt: createdAt,

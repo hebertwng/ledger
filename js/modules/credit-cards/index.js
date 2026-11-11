@@ -1,4 +1,5 @@
 import { t, getLocale } from '../../core/i18n.js';
+import { formatCentsForInput } from '../../utils/moneyInput.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
 import { listAccounts } from '../../services/accountRepository.js';
 import {
@@ -11,6 +12,9 @@ import {
 import { centsToDisplay, parseCurrencyInputToCents } from '../../utils/currency.js';
 import { isRequired, isValidDayOfMonth } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
+import { iconSvg } from '../../utils/icons.js';
+import { institutionIconHtml, institutionPickerHtml, openModal } from '../../utils/ui.js';
+import { navigateTo } from '../../core/router.js';
 
 let formState = null;
 
@@ -20,30 +24,37 @@ export async function render(container) {
     ? await Promise.all([listCreditCardsWithUsage(activeSpace.id), listAccounts(activeSpace.id)])
     : [[], []];
   const locale = getLocale();
+  const activeAccounts = accounts.filter((account) => !account.archived);
+  const active = cards.filter((card) => !card.archived);
+  const archived = cards.filter((card) => card.archived);
 
   container.innerHTML = `
     <section class="view">
       <div class="view__header">
         <h1>${t('modules.creditCards.title')}</h1>
-        <button type="button" id="cards-new-button" class="button button--primary" ${accounts.length === 0 ? 'disabled' : ''}>${t('creditCards.newButton')}</button>
+        <button type="button" id="cards-new-button" class="button button--soft" ${activeAccounts.length === 0 ? 'disabled' : ''}>${iconSvg('plusCircle', { size: 18 })} ${t('creditCards.newButton')}</button>
       </div>
-      ${accounts.length === 0 ? `<div class="form-note"><p>${t('creditCards.noAccountsWarning')}</p></div>` : ''}
-      <div id="cards-form-slot"></div>
-      ${cards.length === 0 ? `<div class="empty-state"><p>${t('creditCards.emptyState')}</p></div>` : renderTable(cards, locale)}
+      ${activeAccounts.length === 0 ? `<div class="form-note"><p>${t('creditCards.noAccountsWarning')}</p></div>` : ''}
+      ${active.length === 0 ? `<div class="empty-state"><span class="empty-state__icon">${iconSvg('creditCards', { size: 22 })}</span><p>${t('creditCards.emptyState')}</p></div>` : `<ul class="entity-list">${active.map((card) => rowHtml(card, locale)).join('')}</ul>`}
+      ${
+        archived.length
+          ? `<p class="section-title">${iconSvg('folder', { size: 16 })} ${t('creditCards.archivedTitle')}</p><ul class="entity-list">${archived.map((card) => rowHtml(card, locale)).join('')}</ul>`
+          : ''
+      }
+      <div id="cards-modal-slot"></div>
     </section>
   `;
 
   const newButton = container.querySelector('#cards-new-button');
-  if (accounts.length) {
-    newButton.addEventListener('click', () => {
-      formState = { mode: 'create' };
-      renderForm(container, activeSpace, accounts);
-    });
-  }
+  newButton.addEventListener('click', () => {
+    formState = { mode: 'create' };
+    renderForm(container, activeSpace, activeAccounts);
+  });
 
-  for (const button of container.querySelectorAll('[data-edit-id]')) {
-    button.addEventListener('click', () => {
-      formState = { mode: 'edit', card: cards.find((card) => card.id === button.dataset.editId) };
+  for (const element of container.querySelectorAll('[data-edit-id]')) {
+    element.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      formState = { mode: 'edit', card: cards.find((card) => card.id === element.dataset.editId) };
       renderForm(container, activeSpace, accounts);
     });
   }
@@ -56,109 +67,111 @@ export async function render(container) {
     });
   }
 
-  if (formState) renderForm(container, activeSpace, accounts);
+  for (const button of container.querySelectorAll('[data-invoices]')) {
+    button.addEventListener('click', () => navigateTo('/invoices'));
+  }
+
+  if (formState) renderForm(container, activeSpace, formState.mode === 'edit' ? accounts : activeAccounts);
 }
 
-function renderTable(cards, locale) {
-  const rows = cards
-    .map(
-      (card) => `
-        <tr>
-          <td>${escapeHtml(card.name)}${card.archived ? ` <span class="badge badge--muted">${t('common.archivedBadge')}</span>` : ''}</td>
-          <td>${escapeHtml(card.brand)}</td>
-          <td class="table__value">${centsToDisplay(card.limitCents, locale)}</td>
-          <td class="table__value">${centsToDisplay(card.usedCents, locale)}</td>
-          <td class="table__value">${centsToDisplay(card.availableCents, locale)}</td>
-          <td>${card.closingDay}</td>
-          <td>${card.dueDay}</td>
-          <td class="table__actions">
-            <button type="button" class="link-button" data-edit-id="${card.id}">${t('common.edit')}</button>
-            <button type="button" class="link-button" data-archive-id="${card.id}">${card.archived ? t('common.unarchive') : t('common.archive')}</button>
-          </td>
-        </tr>
-      `
-    )
-    .join('');
-
+function rowHtml(card, locale) {
   return `
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>${t('creditCards.column.name')}</th>
-          <th>${t('creditCards.column.brand')}</th>
-          <th>${t('creditCards.column.limit')}</th>
-          <th>${t('creditCards.column.used')}</th>
-          <th>${t('creditCards.column.available')}</th>
-          <th>${t('creditCards.column.closingDay')}</th>
-          <th>${t('creditCards.column.dueDay')}</th>
-          <th>${t('common.actions')}</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <li class="entity-row entity-row--clickable ${card.archived ? 'is-archived' : ''}" data-edit-id="${card.id}" tabindex="0">
+      ${institutionIconHtml(card, { fallbackIcon: 'creditCards', size: 40 })}
+      <span class="entity-row__main">
+        <span class="entity-row__title">${escapeHtml(card.name)}</span>
+        <span class="entity-row__subtitle">${t('creditCards.closesDue', { closing: card.closingDay, due: card.dueDay })}${card.brand ? ` · ${escapeHtml(card.brand)}` : ''}</span>
+      </span>
+      <span class="entity-row__value">
+        ${centsToDisplay(card.availableCents, locale)}
+        <small>${t('creditCards.availableOf', { limit: centsToDisplay(card.limitCents, locale) })}</small>
+      </span>
+      <span class="entity-row__actions">
+        <button type="button" class="button button--small" data-invoices>${t('dashboard.seeInvoice')}</button>
+        <button type="button" class="link-button link-button--muted" data-archive-id="${card.id}">${iconSvg(card.archived ? 'unarchive' : 'archive', { size: 14 })} ${card.archived ? t('common.unarchive') : t('common.archive')}</button>
+      </span>
+    </li>
   `;
 }
 
 function renderForm(container, activeSpace, accounts) {
-  const slot = container.querySelector('#cards-form-slot');
+  const slot = container.querySelector('#cards-modal-slot');
   const isEdit = formState.mode === 'edit';
   const card = formState.card;
-
-  slot.innerHTML = `
-    <form id="card-form" class="form-card">
-      <h2>${isEdit ? t('creditCards.form.titleEdit') : t('creditCards.form.titleCreate')}</h2>
-      <div class="form-field">
-        <label for="card-name">${t('creditCards.form.name')}</label>
-        <input id="card-name" name="name" type="text" value="${isEdit ? escapeHtml(card.name) : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="card-brand">${t('creditCards.form.brand')}</label>
-        <input id="card-brand" name="brand" type="text" value="${isEdit ? escapeHtml(card.brand) : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="card-limit">${t('creditCards.form.limit')}</label>
-        <input id="card-limit" name="limit" type="text" inputmode="decimal" value="${isEdit ? (card.limitCents / 100).toFixed(2) : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="card-closing-day">${t('creditCards.form.closingDay')}</label>
-        <input id="card-closing-day" name="closingDay" type="number" min="1" max="31" value="${isEdit ? card.closingDay : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="card-due-day">${t('creditCards.form.dueDay')}</label>
-        <input id="card-due-day" name="dueDay" type="number" min="1" max="31" value="${isEdit ? card.dueDay : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="card-closing-rule">${t('creditCards.form.closingRule')}</label>
-        <select id="card-closing-rule" name="closingDayRule">
-          <option value="${CLOSING_DAY_RULES.CLOSES_ON_DAY}" ${isEdit && card.closingDayRule === CLOSING_DAY_RULES.CLOSES_ON_DAY ? 'selected' : ''}>${t('creditCards.closingRule.closesOnDay')}</option>
-          <option value="${CLOSING_DAY_RULES.CLOSES_BEFORE_DAY}" ${isEdit && card.closingDayRule === CLOSING_DAY_RULES.CLOSES_BEFORE_DAY ? 'selected' : ''}>${t('creditCards.closingRule.closesBeforeDay')}</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label for="card-payment-account">${t('creditCards.form.paymentAccount')}</label>
-        <select id="card-payment-account" name="paymentAccountId">
-          ${accounts
-            .map((account) => `<option value="${account.id}" ${isEdit && card.paymentAccountId === account.id ? 'selected' : ''}>${escapeHtml(account.name)}</option>`)
-            .join('')}
-        </select>
-      </div>
-      <p class="form-error" id="card-form-error" hidden></p>
-      <div class="form-actions">
-        <button type="submit" class="button button--primary">${t('common.save')}</button>
-        <button type="button" id="card-form-cancel" class="button">${t('common.cancel')}</button>
-      </div>
-    </form>
-  `;
-
-  slot.querySelector('#card-form-cancel').addEventListener('click', () => {
+  const close = () => {
     formState = null;
     render(container);
+  };
+
+  const modal = openModal(slot, {
+    title: isEdit ? t('creditCards.form.titleEdit') : t('creditCards.form.titleCreate'),
+    size: 'lg',
+    onClose: close,
+    body: `
+      <form id="card-form" class="modal__body" novalidate>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="card-name">${t('creditCards.form.name')}</label>
+            <input id="card-name" name="name" type="text" autocomplete="off" value="${isEdit ? escapeHtml(card.name) : ''}" />
+          </div>
+          <div class="form-field">
+            <label for="card-brand">${t('creditCards.form.brand')}</label>
+            <input id="card-brand" name="brand" type="text" autocomplete="off" placeholder="Visa, Mastercard…" value="${isEdit ? escapeHtml(card.brand || '') : ''}" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="card-limit">${t('creditCards.form.limit')}</label>
+            <input id="card-limit" name="limit" type="text" inputmode="numeric" data-money placeholder="0,00" value="${isEdit ? formatCentsForInput(card.limitCents, getLocale()) : ''}" />
+          </div>
+          <div class="form-field">
+            <label for="card-payment-account">${t('creditCards.form.paymentAccount')}</label>
+            <select id="card-payment-account" name="paymentAccountId">
+              ${accounts.map((account) => `<option value="${account.id}" ${isEdit && card.paymentAccountId === account.id ? 'selected' : ''}>${escapeHtml(account.name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="card-closing-day">${t('creditCards.form.closingDay')}</label>
+            <input id="card-closing-day" name="closingDay" type="number" min="1" max="31" value="${isEdit ? card.closingDay : ''}" />
+          </div>
+          <div class="form-field">
+            <label for="card-due-day">${t('creditCards.form.dueDay')}</label>
+            <input id="card-due-day" name="dueDay" type="number" min="1" max="31" value="${isEdit ? card.dueDay : ''}" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="card-closing-rule">${t('creditCards.form.closingRule')}</label>
+          <select id="card-closing-rule" name="closingDayRule">
+            <option value="${CLOSING_DAY_RULES.CLOSES_ON_DAY}" ${isEdit && card.closingDayRule === CLOSING_DAY_RULES.CLOSES_ON_DAY ? 'selected' : ''}>${t('creditCards.closingRule.closesOnDay')}</option>
+            <option value="${CLOSING_DAY_RULES.CLOSES_BEFORE_DAY}" ${isEdit && card.closingDayRule === CLOSING_DAY_RULES.CLOSES_BEFORE_DAY ? 'selected' : ''}>${t('creditCards.closingRule.closesBeforeDay')}</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field__label">${t('creditCards.form.institution')}</span>
+          ${institutionPickerHtml('institution', isEdit ? card.institution : null, t('accounts.form.institutionNone'))}
+        </div>
+        <p class="form-error" id="card-form-error" hidden></p>
+        <div class="form-actions">
+          <button type="button" id="card-form-cancel" class="button">${t('common.cancel')}</button>
+          <button type="submit" class="button button--primary">${t('common.save')}</button>
+        </div>
+      </form>
+    `,
   });
 
-  slot.querySelector('#card-form').addEventListener('submit', async (event) => {
+  modal.querySelector('#card-form-cancel').addEventListener('click', close);
+  modal.querySelector('#card-name').focus();
+
+  modal.querySelector('#card-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.target);
-    const errorElement = slot.querySelector('#card-form-error');
+    const errorElement = modal.querySelector('#card-form-error');
+    const showError = (message) => {
+      errorElement.textContent = message;
+      errorElement.hidden = false;
+    };
 
     const name = String(formData.get('name') || '').trim();
     const brand = String(formData.get('brand') || '').trim();
@@ -167,11 +180,7 @@ function renderForm(container, activeSpace, accounts) {
     const closingDayRule = String(formData.get('closingDayRule'));
     const paymentAccountId = String(formData.get('paymentAccountId') || '');
     const limitCents = parseCurrencyInputToCents(String(formData.get('limit') || '0'));
-
-    const showError = (message) => {
-      errorElement.textContent = message;
-      errorElement.hidden = false;
-    };
+    const institution = String(formData.get('institution') || '') || null;
 
     if (!isRequired(name)) return showError(t('creditCards.validation.nameRequired'));
     if (!isRequired(brand)) return showError(t('creditCards.validation.brandRequired'));
@@ -179,13 +188,9 @@ function renderForm(container, activeSpace, accounts) {
     if (!isRequired(paymentAccountId)) return showError(t('creditCards.validation.paymentAccountRequired'));
     if (limitCents <= 0) return showError(t('creditCards.validation.limitInvalid'));
 
-    const payload = { name, brand, closingDay, dueDay, closingDayRule, paymentAccountId, limitCents };
-
-    if (isEdit) {
-      await updateCreditCard(card.id, payload);
-    } else {
-      await createCreditCard(activeSpace.id, payload);
-    }
+    const payload = { name, brand, closingDay, dueDay, closingDayRule, paymentAccountId, limitCents, institution };
+    if (isEdit) await updateCreditCard(card.id, payload);
+    else await createCreditCard(activeSpace.id, payload);
 
     formState = null;
     render(container);

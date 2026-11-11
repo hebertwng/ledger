@@ -1,4 +1,6 @@
 import { t, getLocale } from '../../core/i18n.js';
+import { iconSvg } from '../../utils/icons.js';
+import { formatCentsForInput } from '../../utils/moneyInput.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
 import { listCategories } from '../../services/categoryRepository.js';
 import { listTransactions, filterTransactions } from '../../services/transactionRepository.js';
@@ -116,8 +118,8 @@ function renderTable(rows, locale) {
             <span>${t('budgets.column.remaining')}: <strong>${centsToDisplay(progress.remainingCents, locale)}</strong></span>
           </div>
           <div class="form-actions">
-            <button type="button" class="link-button" data-edit-id="${budget.id}">${t('common.edit')}</button>
-            <button type="button" class="link-button" data-delete-id="${budget.id}">${t('common.delete')}</button>
+            <button type="button" class="link-button" data-edit-id="${budget.id}">${iconSvg('pencil', { size: 14 })} ${t('common.edit')}</button>
+            <button type="button" class="link-button link-button--danger" data-delete-id="${budget.id}">${iconSvg('trash', { size: 14 })} ${t('common.delete')}</button>
           </div>
         </article>
       `;
@@ -144,7 +146,7 @@ function renderForm(context) {
       </div>
       <div class="form-field">
         <label for="budget-limit">${t('budgets.form.limit')}</label>
-        <input id="budget-limit" name="limit" type="text" inputmode="decimal" value="${isEdit ? (budget.limitCents / 100).toFixed(2) : ''}" />
+        <input id="budget-limit" name="limit" type="text" inputmode="numeric" data-money value="${isEdit ? formatCentsForInput(budget.limitCents, getLocale()) : ''}" />
       </div>
       <p class="form-error" id="budget-form-error" hidden></p>
       <div class="form-actions">

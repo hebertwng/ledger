@@ -1,4 +1,4 @@
-import { getAllRecords, putRecord } from './database.js';
+import { getAllRecords, getAllByIndex, putRecord } from './database.js';
 import { getCurrentUser } from './auth.js';
 import { t } from './i18n.js';
 import { createId } from '../utils/ids.js';
@@ -6,6 +6,26 @@ import { nowISOTimestamp } from '../utils/dates.js';
 
 // Árvore de categorias padrão (seção 7). As chaves são usadas para resolver a tradução
 // (core/i18n.js); os nomes gravados são texto comum a partir daí, editável pelo usuário.
+// Ícone e cor de cada categoria principal padrão.
+const DEFAULT_CATEGORY_STYLE = {
+  housing: { icon: 'home', color: '#8193ff' },
+  food: { icon: 'utensils', color: '#ff977c' },
+  transport: { icon: 'car', color: '#5096de' },
+  health: { icon: 'heart', color: '#ff6c6c' },
+  education: { icon: 'graduation', color: '#8e6bd8' },
+  shopping: { icon: 'bag', color: '#ff70a1' },
+  leisure: { icon: 'plane', color: '#2bb5a9' },
+  family: { icon: 'users', color: '#f0b429' },
+  taxes: { icon: 'receipt', color: '#a1724e' },
+  financial: { icon: 'bank', color: '#4b5563' },
+  salary: { icon: 'briefcase', color: '#2ec27e' },
+  investments: { icon: 'trendingUp', color: '#5096de' },
+  extraIncome: { icon: 'star', color: '#f0b429' },
+  gifts: { icon: 'gift', color: '#ff70a1' },
+  rentals: { icon: 'key', color: '#8193ff' },
+  otherIncome: { icon: 'refund', color: '#787878' },
+};
+
 const DEFAULT_CATEGORY_TREE = [
   { key: 'housing', kind: 'expense', children: ['rent', 'water', 'electricity', 'internet'] },
   { key: 'food', kind: 'expense', children: ['market', 'restaurants', 'delivery'] },
@@ -36,8 +56,8 @@ function buildCategoryRecords(spaceId, userId, createdAt) {
       name: t(`categories.${parent.key}`),
       kind: parent.kind,
       parentId: null,
-      icon: null,
-      color: null,
+      icon: DEFAULT_CATEGORY_STYLE[parent.key]?.icon || null,
+      color: DEFAULT_CATEGORY_STYLE[parent.key]?.color || null,
       archived: false,
       createdAt,
       updatedAt: createdAt,
@@ -68,6 +88,27 @@ function buildCategoryRecords(spaceId, userId, createdAt) {
   }
 
   return records;
+}
+
+// Espaços criados antes dos ícones de categoria: dá ícone e cor às categorias principais padrão
+// que ainda não têm ícone (reconhecidas pelo nome em qualquer idioma). Não mexe nas que o
+// usuário já personalizou.
+export async function applyDefaultCategoryIcons(spaceId) {
+  const dictionaries = await Promise.all([import('../locales/pt-BR.js'), import('../locales/en-US.js')]);
+  const styleByName = new Map();
+  for (const { default: dictionary } of dictionaries) {
+    for (const [key, style] of Object.entries(DEFAULT_CATEGORY_STYLE)) {
+      const name = dictionary[`categories.${key}`];
+      if (name) styleByName.set(name.trim().toLowerCase(), style);
+    }
+  }
+  const categories = await getAllByIndex('categories', 'bySpace', spaceId);
+  for (const category of categories) {
+    if (category.parentId || category.icon || category.deletedAt) continue;
+    const style = styleByName.get(category.name.trim().toLowerCase());
+    if (!style) continue;
+    await putRecord('categories', { ...category, icon: style.icon, color: category.color || style.color });
+  }
 }
 
 // Etapa 2: há sempre um único espaço ativo. A troca entre múltiplos espaços (seção 3)

@@ -43,6 +43,7 @@ export async function createCreditCard(spaceId, input) {
     dueDay: input.dueDay,
     closingDayRule: input.closingDayRule,
     paymentAccountId: input.paymentAccountId,
+    institution: input.institution || null,
     archived: false,
     createdAt,
     updatedAt: createdAt,

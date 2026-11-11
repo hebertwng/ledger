@@ -1,4 +1,6 @@
 import { t, getLocale } from '../../core/i18n.js';
+import { iconSvg } from '../../utils/icons.js';
+import { formatCentsForInput } from '../../utils/moneyInput.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
 import { listAccounts } from '../../services/accountRepository.js';
 import { listTransfers, createTransfer, updateTransfer, deleteTransfer } from '../../services/transferRepository.js';
@@ -69,8 +71,8 @@ function renderTable(transfers, accountsById, locale) {
           <td class="table__value">${centsToDisplay(transfer.amountCents, locale)}</td>
           <td>${escapeHtml(transfer.description || '')}</td>
           <td class="table__actions">
-            <button type="button" class="link-button" data-edit-id="${transfer.id}">${t('common.edit')}</button>
-            <button type="button" class="link-button" data-delete-id="${transfer.id}">${t('common.delete')}</button>
+            <button type="button" class="link-button" data-edit-id="${transfer.id}">${iconSvg('pencil', { size: 14 })} ${t('common.edit')}</button>
+            <button type="button" class="link-button link-button--danger" data-delete-id="${transfer.id}">${iconSvg('trash', { size: 14 })} ${t('common.delete')}</button>
           </td>
         </tr>
       `;
@@ -119,7 +121,7 @@ function renderForm(container, activeSpace, accounts) {
       </div>
       <div class="form-field">
         <label for="transfer-amount">${t('transfers.form.amount')}</label>
-        <input id="transfer-amount" name="amount" type="text" inputmode="decimal" value="${isEdit ? (transfer.amountCents / 100).toFixed(2) : ''}" />
+        <input id="transfer-amount" name="amount" type="text" inputmode="numeric" data-money value="${isEdit ? formatCentsForInput(transfer.amountCents, getLocale()) : ''}" />
       </div>
       <div class="form-field">
         <label for="transfer-date">${t('transfers.form.date')}</label>

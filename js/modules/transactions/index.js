@@ -1,4 +1,5 @@
 import { t, getLocale } from '../../core/i18n.js';
+import { formatCentsForInput } from '../../utils/moneyInput.js';
 import { getActiveSpace } from '../../core/bootstrap.js';
 import { listAccounts, calculateBalancesAtDate } from '../../services/accountRepository.js';
 import { listCategories } from '../../services/categoryRepository.js';
@@ -22,26 +23,32 @@ import {
 } from '../../services/transactionRepository.js';
 import { centsToDisplay, parseCurrencyInputToCents } from '../../utils/currency.js';
 import { todayISODate, formatReferenceMonth, monthRange } from '../../utils/dates.js';
-import { addMonths } from '../../utils/recurrence.js';
+import { addMonths, buildInstallmentAmounts } from '../../utils/recurrence.js';
 import { listInvoices } from '../../services/invoiceRepository.js';
 import { getAllByIndex } from '../../core/database.js';
 import { isRequired, isValidISODate } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
 import { iconSvg } from '../../utils/icons.js';
+import { categoryIconHtml, institutionIconHtml, colorFromText as colorFromTextBase, openModal } from '../../utils/ui.js';
+import { mountCategoryCombo, buildCategoryOptions } from '../../utils/categoryCombo.js';
 import { navigateTo } from '../../core/router.js';
+
+const SETTLED_STATUSES_SET = new Set(['paid', 'received']);
+const MAX_INSTALLMENTS = 60;
 
 let formState = null;
 let scopeState = null;
 let keydownHandler = null;
+let newMenuOpen = false;
 
 // Mês exibido na tela (YYYY-MM). Navegar para um mês futuro é o que dispara a geração das
-// parcelas/recorrências daquele mês — elas não são mais criadas todas de uma vez.
+// parcelas/recorrências daquele mês — elas não são criadas todas de uma vez.
 let monthState = todayISODate().slice(0, 7);
 
-// Permite que outra tela (ex.: os atalhos de "Novo lançamento" da Visão geral) abra esta tela já
-// com o formulário de criação pronto, em vez de só navegar para a lista.
+// Permite que outra tela (ex.: os atalhos da Visão geral) abra esta tela já com o formulário de
+// criação pronto, em vez de só navegar para a lista.
 export function openCreateForm(kind) {
-  formState = { mode: 'create', kind };
+  formState = { mode: 'create', draft: newDraft(kind) };
 }
 
 // Permite que a Visão geral abra a lista já posicionada em um mês específico.
@@ -49,9 +56,15 @@ export function setTransactionsMonth(yearMonth) {
   monthState = yearMonth;
 }
 
+// Mantidos por compatibilidade com outras telas que importam daqui.
+export const colorFromText = colorFromTextBase;
+export function categoryBadgeHtml(category, className = '', parent = null) {
+  return categoryIconHtml(category, { parent, size: 36, className });
+}
+
 const EMPTY_FILTERS = Object.freeze({
   kind: '',
-  accountId: '',
+  origin: '',
   categoryId: '',
   status: '',
   text: '',
@@ -67,6 +80,26 @@ function monthTitle(yearMonth, locale) {
   const [year, month] = yearMonth.split('-').map(Number);
   const name = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', month: 'long' }).format(new Date(Date.UTC(year, month - 1, 1)));
   return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`;
+}
+
+// Rascunho do formulário: guarda tudo o que o usuário já preencheu, para que trocar o tipo, a
+// repetição ou a conta nunca apague (nem troque) o que já foi informado.
+function newDraft(kind = 'expense') {
+  return {
+    kind,
+    description: '',
+    amount: '',
+    date: todayISODate(),
+    settled: true,
+    settledTouched: false,
+    target: '',
+    categoryId: null,
+    repeatOpen: false,
+    repeatType: 'recurring',
+    frequency: 'monthly',
+    endDate: '',
+    installmentsTotal: '2',
+  };
 }
 
 export async function render(container) {
@@ -102,20 +135,34 @@ export async function render(container) {
     invoicesById: new Map(invoices.map((invoice) => [invoice.id, invoice])),
   };
   const locale = getLocale();
+  const canCreate = accounts.some((account) => !account.archived);
 
   container.innerHTML = `
     <section class="view tx-view">
-      <div class="tx-toolbar">
-        <button type="button" id="transactions-new-button" class="button button--dark" ${accounts.length === 0 ? 'disabled' : ''}>${iconSvg('plus')} ${t('transactions.newButtonShort')}</button>
-        <div class="month-nav" role="group" aria-label="${t('transactions.monthNav.label')}">
-          <button type="button" class="icon-button" id="month-prev" title="${t('transactions.monthNav.previous')}">${iconSvg('chevronLeft')}</button>
-          <button type="button" class="month-nav__label" id="month-current" title="${t('transactions.monthNav.today')}">${monthTitle(monthState, locale)}</button>
-          <button type="button" class="icon-button" id="month-next" title="${t('transactions.monthNav.next')}">${iconSvg('chevronRight')}</button>
+      <div class="tx-header">
+        <div class="tx-toolbar">
+          <div class="menu" id="tx-new-menu">
+            <button type="button" id="transactions-new-button" class="button button--dark" aria-haspopup="menu" aria-expanded="${newMenuOpen}" ${canCreate ? '' : 'disabled'}>${iconSvg('plus')} ${t('transactions.newButtonShort')}</button>
+            ${
+              newMenuOpen
+                ? `<div class="menu__panel" role="menu">
+                    <button type="button" class="menu__item" data-new-kind="expense" role="menuitem"><span class="menu__item-icon amount--expense">${iconSvg('arrowDown', { size: 16 })}</span>${t('transactions.menu.newExpense')}<kbd>${t('transactions.menu.key', { key: 'D' })}</kbd></button>
+                    <button type="button" class="menu__item" data-new-kind="income" role="menuitem"><span class="menu__item-icon amount--income">${iconSvg('arrowUp', { size: 16 })}</span>${t('transactions.menu.newIncome')}<kbd>${t('transactions.menu.key', { key: 'R' })}</kbd></button>
+                    <button type="button" class="menu__item" data-new-kind="transfer" role="menuitem"><span class="menu__item-icon" style="color:var(--color-dark)">${iconSvg('transfers', { size: 16 })}</span>${t('transactions.menu.newTransfer')}<kbd>${t('transactions.menu.key', { key: 'T' })}</kbd></button>
+                  </div>`
+                : ''
+            }
+          </div>
+          <div class="month-nav" role="group" aria-label="${t('transactions.monthNav.label')}">
+            <button type="button" class="icon-button" id="month-prev" title="${t('transactions.monthNav.previous')}">${iconSvg('chevronLeft')}</button>
+            <button type="button" class="month-nav__label" id="month-current" title="${t('transactions.monthNav.today')}">${monthTitle(monthState, locale)}</button>
+            <button type="button" class="icon-button" id="month-next" title="${t('transactions.monthNav.next')}">${iconSvg('chevronRight')}</button>
+          </div>
+          <div class="tx-toolbar__end"></div>
         </div>
-        <div class="tx-toolbar__spacer"></div>
+        ${canCreate ? '' : `<div class="form-note"><p>${t('transactions.noAccountsWarning')}</p></div>`}
+        <div id="transactions-filters-slot"></div>
       </div>
-      ${accounts.length === 0 ? `<div class="form-note"><p>${t('transactions.noAccountsWarning')}</p></div>` : ''}
-      <div id="transactions-filters-slot"></div>
       <div class="tx-panel">
         <div id="transactions-results-slot"></div>
         <div id="transactions-footer-slot" class="tx-footer"></div>
@@ -125,21 +172,30 @@ export async function render(container) {
   `;
 
   const newButton = container.querySelector('#transactions-new-button');
-  if (accounts.length) {
-    newButton.addEventListener('click', () => {
-      formState = { mode: 'create' };
-      renderForm(context);
+  newButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    newMenuOpen = !newMenuOpen;
+    render(container);
+  });
+  for (const item of container.querySelectorAll('[data-new-kind]')) {
+    item.addEventListener('click', () => {
+      newMenuOpen = false;
+      startCreate(context, item.dataset.newKind);
     });
   }
+  if (newMenuOpen) {
+    const closeMenu = (event) => {
+      document.removeEventListener('mousedown', closeMenu);
+      if (!container.querySelector('#tx-new-menu')?.contains(event.target) && newMenuOpen) {
+        newMenuOpen = false;
+        render(container);
+      }
+    };
+    document.addEventListener('mousedown', closeMenu);
+  }
 
-  container.querySelector('#month-prev').addEventListener('click', () => {
-    monthState = addMonths(`${monthState}-01`, -1).slice(0, 7);
-    render(container);
-  });
-  container.querySelector('#month-next').addEventListener('click', () => {
-    monthState = addMonths(`${monthState}-01`, 1).slice(0, 7);
-    render(container);
-  });
+  container.querySelector('#month-prev').addEventListener('click', () => shiftMonth(context, -1));
+  container.querySelector('#month-next').addEventListener('click', () => shiftMonth(context, 1));
   container.querySelector('#month-current').addEventListener('click', () => {
     monthState = todayISODate().slice(0, 7);
     render(container);
@@ -150,52 +206,64 @@ export async function render(container) {
   attachKeyboardShortcuts(context);
 
   if (formState) renderForm(context);
-  if (scopeState) renderScopeChooser(context);
+  else if (scopeState) renderScopeChooser(context);
 }
 
-// Atalhos D/R/T (nova despesa/receita/transferência), ←/→ para trocar de mês, e Esc para fechar
-// o modal aberto — só reagem enquanto esta tela está ativa (confere a rota a cada tecla, já que
-// o listener fica em document e o router não tem um "desmontar" explícito).
+function shiftMonth(context, delta) {
+  monthState = addMonths(`${monthState}-01`, delta).slice(0, 7);
+  render(context.container);
+}
+
+function startCreate(context, kind) {
+  if (kind === 'transfer') {
+    navigateTo('/transfers');
+    return;
+  }
+  formState = { mode: 'create', draft: newDraft(kind) };
+  render(context.container);
+}
+
+// Atalhos D/R/T (nova despesa/receita/transferência) e ←/→ para trocar de mês — só reagem
+// enquanto esta tela está ativa e sem modal aberto (o Esc do modal é tratado pelo próprio modal).
 function attachKeyboardShortcuts(context) {
   if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
   keydownHandler = (event) => {
     if (window.location.hash.replace(/^#/, '') !== '/transactions') return;
-
-    if (event.key === 'Escape' && (formState || scopeState)) {
-      formState = null;
-      scopeState = null;
-      render(context.container);
-      return;
-    }
-
     if (formState || scopeState) return;
     const target = event.target;
-    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!context.accounts.some((account) => !account.archived) && ['d', 'r'].includes(event.key.toLowerCase())) return;
 
     const key = event.key.toLowerCase();
-    if (key === 'd') {
-      formState = { mode: 'create', kind: 'expense' };
-      renderForm(context);
-    } else if (key === 'r') {
-      formState = { mode: 'create', kind: 'income' };
-      renderForm(context);
-    } else if (key === 't') {
-      navigateTo('/transfers');
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      monthState = addMonths(`${monthState}-01`, event.key === 'ArrowLeft' ? -1 : 1).slice(0, 7);
+    if (key === 'd') startCreate(context, 'expense');
+    else if (key === 'r') startCreate(context, 'income');
+    else if (key === 't') startCreate(context, 'transfer');
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') shiftMonth(context, event.key === 'ArrowLeft' ? -1 : 1);
+    else if (event.key === 'Escape' && newMenuOpen) {
+      newMenuOpen = false;
       render(context.container);
     }
   };
   document.addEventListener('keydown', keydownHandler);
 }
 
-function resolveEffectiveFilters() {
+// Ids da categoria escolhida no filtro mais os das subcategorias dela.
+function categoryFilterIds(context) {
+  if (!filterState.categoryId) return undefined;
+  const ids = [filterState.categoryId];
+  for (const category of context.categories) if (category.parentId === filterState.categoryId) ids.push(category.id);
+  return ids;
+}
+
+function resolveEffectiveFilters(context) {
+  const [originType, originId] = filterState.origin ? filterState.origin.split(':') : [];
   return {
     ...monthRange(monthState),
     kind: filterState.kind || undefined,
-    accountId: filterState.accountId || undefined,
-    categoryId: filterState.categoryId || undefined,
+    accountId: originType === 'account' ? originId : undefined,
+    creditCardId: originType === 'card' ? originId : undefined,
+    categoryIds: categoryFilterIds(context),
     status: filterState.status || undefined,
     text: filterState.text || undefined,
     minAmountCents: filterState.minAmount ? parseCurrencyInputToCents(filterState.minAmount) : undefined,
@@ -203,13 +271,17 @@ function resolveEffectiveFilters() {
   };
 }
 
-function selectHtml(name, label, allLabel, options) {
+function chipHtml(name, label, allLabel, groups) {
+  const optionHtml = (option) =>
+    `<option value="${option.value}" ${filterState[name] === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`;
   return `
     <label class="filter-chip">
       <span class="visually-hidden">${label}</span>
-      <select name="${name}" aria-label="${label}">
+      <select name="${name}" aria-label="${label}" class="${filterState[name] ? 'is-set' : ''}">
         <option value="">${allLabel}</option>
-        ${options.map((option) => `<option value="${option.value}" ${filterState[name] === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
+        ${groups
+          .map((group) => (group.label ? `<optgroup label="${escapeHtml(group.label)}">${group.options.map(optionHtml).join('')}</optgroup>` : group.options.map(optionHtml).join('')))
+          .join('')}
       </select>
     </label>
   `;
@@ -217,65 +289,86 @@ function selectHtml(name, label, allLabel, options) {
 
 function renderFiltersBar(context) {
   const slot = context.container.querySelector('#transactions-filters-slot');
-  const { accounts, categories } = context;
+  const { accounts, creditCards, categories } = context;
   const hasActiveFilters = Object.keys(EMPTY_FILTERS).some((key) => filterState[key] !== EMPTY_FILTERS[key]);
 
+  // Categorias: só as do tipo escolhido no filtro "Tipo" (ou todas, se nenhum), principais primeiro.
+  const categoryGroups = (filterState.kind ? [filterState.kind] : ['expense', 'income']).map((kind) => ({
+    label: filterState.kind ? '' : t(`categories.tab.${kind}`),
+    options: buildCategoryOptions(categories, kind, filterState.categoryId || null)
+      .filter((option) => !option.parent)
+      .map((option) => ({ value: option.category.id, label: option.category.name })),
+  }));
+
   slot.innerHTML = `
-    <form id="transactions-filters" class="tx-filters">
-      <div class="tx-filters__row">
-        ${selectHtml('kind', t('transactions.filters.kind'), t('transactions.filters.kindChip'), [
-          { value: 'income', label: t('transactions.kind.income') },
-          { value: 'expense', label: t('transactions.kind.expense') },
-        ])}
-        ${selectHtml('accountId', t('transactions.filters.account'), t('transactions.filters.accountChip'), accounts.map((account) => ({ value: account.id, label: account.name })))}
-        ${selectHtml('categoryId', t('transactions.filters.category'), t('transactions.filters.categoryChip'), categories.map((category) => ({ value: category.id, label: category.name })))}
-        ${selectHtml('status', t('transactions.filters.status'), t('transactions.filters.statusChip'), TRANSACTION_STATUSES.map((status) => ({ value: status, label: t(`transactions.status.${status}`) })))}
-        <label class="tx-filters__search">
-          ${iconSvg('search', { size: 16 })}
-          <input name="text" type="search" placeholder="${t('transactions.filters.text')}" value="${escapeHtml(filterState.text)}" />
-        </label>
-        <button type="button" id="filters-more" class="icon-button ${moreFiltersOpen ? 'is-active' : ''}" title="${t('transactions.filters.more')}">${iconSvg('filter')}</button>
-        ${hasActiveFilters ? `<button type="button" id="filters-clear" class="link-button">${t('transactions.filters.clear')}</button>` : ''}
-      </div>
-      ${
-        moreFiltersOpen
-          ? `
-            <div class="tx-filters__more">
-              <div class="form-field">
-                <label for="filter-min-amount">${t('transactions.filters.minAmount')}</label>
-                <input id="filter-min-amount" name="minAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.minAmount)}" />
+    <div class="tx-filters-wrap">
+      <form id="transactions-filters" class="tx-filters">
+        <div class="tx-filters__row">
+          ${chipHtml('origin', t('transactions.filters.origin'), t('transactions.filters.originChip'), [
+            { label: t('nav.accounts'), options: accounts.map((account) => ({ value: `account:${account.id}`, label: account.name })) },
+            ...(creditCards.length ? [{ label: t('nav.creditCards'), options: creditCards.map((card) => ({ value: `card:${card.id}`, label: card.name })) }] : []),
+          ])}
+          ${chipHtml('kind', t('transactions.filters.kind'), t('transactions.filters.kindChip'), [
+            { options: [
+              { value: 'expense', label: t('transactions.kind.expensePlural') },
+              { value: 'income', label: t('transactions.kind.incomePlural') },
+            ] },
+          ])}
+          ${chipHtml('categoryId', t('transactions.filters.category'), t('transactions.filters.categoryChip'), categoryGroups)}
+          ${chipHtml('status', t('transactions.filters.status'), t('transactions.filters.statusChip'), [
+            { options: TRANSACTION_STATUSES.map((status) => ({ value: status, label: t(`transactions.status.${status}`) })) },
+          ])}
+          <label class="tx-filters__search">
+            ${iconSvg('search', { size: 16 })}
+            <input name="text" type="search" placeholder="${t('transactions.filters.text')}" value="${escapeHtml(filterState.text)}" />
+          </label>
+          ${hasActiveFilters ? `<button type="button" id="filters-clear" class="link-button">${iconSvg('close', { size: 14 })} ${t('transactions.filters.clear')}</button>` : ''}
+        </div>
+        ${
+          moreFiltersOpen
+            ? `
+              <div class="tx-filters__more">
+                <div class="form-field">
+                  <label for="filter-min-amount">${t('transactions.filters.minAmount')}</label>
+                  <input id="filter-min-amount" name="minAmount" type="text" inputmode="numeric" data-money value="${escapeHtml(filterState.minAmount)}" />
+                </div>
+                <div class="form-field">
+                  <label for="filter-max-amount">${t('transactions.filters.maxAmount')}</label>
+                  <input id="filter-max-amount" name="maxAmount" type="text" inputmode="numeric" data-money value="${escapeHtml(filterState.maxAmount)}" />
+                </div>
+                <div class="form-field">
+                  <label for="filter-sort">${t('transactions.filters.sortBy')}</label>
+                  <select id="filter-sort" name="sortBy">
+                    <option value="date" ${filterState.sortBy === 'date' ? 'selected' : ''}>${t('transactions.filters.sortDate')}</option>
+                    <option value="amount" ${filterState.sortBy === 'amount' ? 'selected' : ''}>${t('transactions.filters.sortAmount')}</option>
+                    <option value="description" ${filterState.sortBy === 'description' ? 'selected' : ''}>${t('transactions.filters.sortDescription')}</option>
+                  </select>
+                </div>
               </div>
-              <div class="form-field">
-                <label for="filter-max-amount">${t('transactions.filters.maxAmount')}</label>
-                <input id="filter-max-amount" name="maxAmount" type="text" inputmode="decimal" value="${escapeHtml(filterState.maxAmount)}" />
-              </div>
-              <div class="form-field">
-                <label for="filter-sort">${t('transactions.filters.sortBy')}</label>
-                <select id="filter-sort" name="sortBy">
-                  <option value="date" ${filterState.sortBy === 'date' ? 'selected' : ''}>${t('transactions.filters.sortDate')}</option>
-                  <option value="amount" ${filterState.sortBy === 'amount' ? 'selected' : ''}>${t('transactions.filters.sortAmount')}</option>
-                  <option value="description" ${filterState.sortBy === 'description' ? 'selected' : ''}>${t('transactions.filters.sortDescription')}</option>
-                </select>
-              </div>
-            </div>
-          `
-          : ''
-      }
-    </form>
+            `
+            : ''
+        }
+      </form>
+      <button type="button" id="filters-more" class="icon-button icon-button--outline icon-button--round ${moreFiltersOpen ? 'is-active' : ''}" style="width:48px;height:48px" title="${t('transactions.filters.more')}" aria-pressed="${moreFiltersOpen}">${iconSvg('filter')}</button>
+    </div>
   `;
 
   const form = slot.querySelector('#transactions-filters');
   form.addEventListener('submit', (event) => event.preventDefault());
 
-  for (const field of ['kind', 'accountId', 'categoryId', 'status', 'text', 'minAmount', 'maxAmount', 'sortBy']) {
+  for (const field of Object.keys(EMPTY_FILTERS)) {
     const input = form.querySelector(`[name="${field}"]`);
     if (!input) continue;
     const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
       filterState[field] = input.value;
+      // Trocar o tipo descarta uma categoria do outro tipo.
+      if (field === 'kind' && filterState.categoryId) {
+        const category = context.categoriesById.get(filterState.categoryId);
+        if (category && filterState.kind && category.kind !== filterState.kind) filterState.categoryId = '';
+      }
       updateResultsSlot(context);
-      // O botão "Limpar filtros" aparece/some conforme haja filtro ativo — só re-renderiza a
-      // barra em selects, para não tirar o foco de quem está digitando na busca.
+      // Só re-renderiza a barra em selects, para não tirar o foco de quem está digitando.
       if (input.tagName === 'SELECT') renderFiltersBar(context);
     });
   }
@@ -285,32 +378,32 @@ function renderFiltersBar(context) {
     renderFiltersBar(context);
   });
 
-  const clearButton = slot.querySelector('#filters-clear');
-  if (clearButton) {
-    clearButton.addEventListener('click', () => {
-      filterState = { ...EMPTY_FILTERS };
-      renderFiltersBar(context);
-      updateResultsSlot(context);
-    });
-  }
+  slot.querySelector('#filters-clear')?.addEventListener('click', () => {
+    filterState = { ...EMPTY_FILTERS };
+    renderFiltersBar(context);
+    updateResultsSlot(context);
+  });
 }
 
 function updateResultsSlot(context) {
   const slot = context.container.querySelector('#transactions-results-slot');
-  const filtered = filterTransactions(context.transactions, resolveEffectiveFilters());
+  const filtered = filterTransactions(context.transactions, resolveEffectiveFilters(context));
   const sorted = sortTransactions(filtered, filterState.sortBy);
 
   slot.innerHTML =
     sorted.length === 0
-      ? `<div class="empty-state tx-empty"><p>${t('transactions.emptyStateMonth', { month: monthTitle(monthState, getLocale()) })}</p></div>`
+      ? `<div class="empty-state tx-empty"><span class="empty-state__icon">${iconSvg('transactions', { size: 22 })}</span><p>${t('transactions.emptyStateMonth', { month: monthTitle(monthState, getLocale()) })}</p></div>`
       : listHtml(sorted, context);
 
   renderFooter(context, filtered);
 
   for (const element of slot.querySelectorAll('[data-edit-id]')) {
     element.addEventListener('click', (event) => {
-      if (event.target.closest('[data-delete-id], [data-toggle-paid-id], [data-pause-series], [data-resume-series], [data-end-series]')) return;
+      if (event.target.closest('button')) return;
       startEdit(context, element.dataset.editId);
+    });
+    element.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && event.target === element) startEdit(context, element.dataset.editId);
     });
   }
   for (const button of slot.querySelectorAll('[data-delete-id]')) {
@@ -340,13 +433,14 @@ function updateResultsSlot(context) {
   }
 }
 
-// Rodapé fixo da lista: saldo realizado e previsto das contas ao final do
-// mês exibido, mais os totais de receitas/despesas dos lançamentos listados.
+// Rodapé fixo da lista: totais do mês à esquerda; saldo realizado e previsto das contas ao final
+// do mês exibido à direita.
 function renderFooter(context, monthTransactions) {
   const slot = context.container.querySelector('#transactions-footer-slot');
   const locale = getLocale();
   const { endDate } = monthRange(monthState);
-  const accounts = filterState.accountId ? context.accounts.filter((account) => account.id === filterState.accountId) : context.accounts;
+  const [originType, originId] = filterState.origin ? filterState.origin.split(':') : [];
+  const accounts = originType === 'account' ? context.accounts.filter((account) => account.id === originId) : context.accounts;
   const { confirmedCents, projectedCents } = calculateBalancesAtDate(accounts, context.allTransactions, endDate);
   const active = monthTransactions.filter((transaction) => transaction.status !== 'cancelled');
   const incomeCents = active.filter((transaction) => transaction.kind === 'income').reduce((sum, transaction) => sum + Math.abs(transaction.amountCents), 0);
@@ -354,25 +448,26 @@ function renderFooter(context, monthTransactions) {
 
   slot.innerHTML = `
     <div class="tx-footer__group">
-      <span class="tx-footer__item"><span>${t('transactions.footer.income')}</span><strong class="amount--income">${centsToDisplay(incomeCents, locale)}</strong></span>
-      <span class="tx-footer__item"><span>${t('transactions.footer.expense')}</span><strong class="amount--expense">${centsToDisplay(expenseCents, locale)}</strong></span>
+      <span>${t('transactions.footer.income')}</span><strong class="amount--income">${centsToDisplay(incomeCents, locale)}</strong>
+      <span>${t('transactions.footer.expense')}</span><strong class="amount--expense">${centsToDisplay(expenseCents ? -expenseCents : 0, locale)}</strong>
     </div>
+    <span class="tx-footer__divider"></span>
     <div class="tx-footer__group">
-      <span class="tx-footer__item"><span>${t('transactions.footer.balance')}</span><strong>${centsToDisplay(confirmedCents, locale)}</strong></span>
-      <span class="tx-footer__item"><span>${t('transactions.footer.projected')}</span><strong>${centsToDisplay(projectedCents, locale)}</strong></span>
+      <span>${t('transactions.footer.balance')}</span><strong class="${confirmedCents < 0 ? 'amount--expense' : 'amount--income'}">${centsToDisplay(confirmedCents, locale)}</strong>
+      <span>${t('transactions.footer.projected')}</span><strong class="${projectedCents < 0 ? 'amount--expense' : 'amount--income'}">${centsToDisplay(projectedCents, locale)}</strong>
     </div>
   `;
 }
 
 function seriesBadgeHtml(transaction, seriesById) {
-  if (!transaction.seriesId) return '';
+  if (!transaction.seriesId) return '<span class="tx-row__series"></span>';
   const series = seriesById.get(transaction.seriesId);
-  if (!series) return '';
+  if (!series) return '<span class="tx-row__series"></span>';
   if (series.kind === 'installment') {
-    return `<span class="tx-row__series" title="${t('transactions.badge.installment', { n: transaction.installmentNumber, total: series.installmentsTotal })}">${iconSvg('repeat', { size: 14 })} ${transaction.installmentNumber}/${series.installmentsTotal}</span>`;
+    return `<span class="tx-row__series" title="${t('transactions.badge.installment', { n: transaction.installmentNumber, total: series.installmentsTotal })}">${iconSvg('calendar', { size: 15 })}</span>`;
   }
   const title = series.paused ? `${t('transactions.badge.recurring')} · ${t('transactions.badge.paused')}` : `${t('transactions.badge.recurring')} · ${t(`transactions.frequency.${series.frequency}`)}`;
-  return `<span class="tx-row__series ${series.paused ? 'is-paused' : ''}" title="${title}">${iconSvg('repeat', { size: 14 })}</span>`;
+  return `<span class="tx-row__series ${series.paused ? 'is-paused' : ''}" title="${title}">${iconSvg('repeat', { size: 15 })}</span>`;
 }
 
 function seriesActionsHtml(transaction, seriesById) {
@@ -380,38 +475,20 @@ function seriesActionsHtml(transaction, seriesById) {
   const series = seriesById.get(transaction.seriesId);
   if (!series || series.kind !== 'recurring') return '';
   return series.paused
-    ? `<button type="button" class="link-button" data-resume-series="${series.id}">${t('transactions.action.resumeSeries')}</button>`
-    : `<button type="button" class="link-button" data-pause-series="${series.id}">${t('transactions.action.pauseSeries')}</button>
-       <button type="button" class="link-button" data-end-series="${series.id}">${t('transactions.action.endSeries')}</button>`;
+    ? `<button type="button" class="link-button" data-resume-series="${series.id}">${iconSvg('play', { size: 14 })} ${t('transactions.action.resumeSeries')}</button>`
+    : `<button type="button" class="link-button" data-pause-series="${series.id}">${iconSvg('pause', { size: 14 })} ${t('transactions.action.pauseSeries')}</button>
+       <button type="button" class="link-button link-button--danger" data-end-series="${series.id}">${iconSvg('stop', { size: 14 })} ${t('transactions.action.endSeries')}</button>`;
 }
 
-function paymentTargetLabel(transaction, context) {
+function paymentTargetHtml(transaction, context) {
   if (transaction.creditCardId) {
     const card = context.creditCardsById.get(transaction.creditCardId);
     const invoice = transaction.invoiceId ? context.invoicesById.get(transaction.invoiceId) : null;
-    const cardName = card ? escapeHtml(card.name) : '-';
-    if (!invoice) return cardName;
-    return `${cardName} · ${t('transactions.invoiceLabel', { month: formatReferenceMonth(invoice.referenceMonth, getLocale()) })}`;
+    const label = `${card ? escapeHtml(card.name) : '-'}${invoice ? ` · ${t('transactions.invoiceLabel', { month: formatReferenceMonth(invoice.referenceMonth, getLocale()) })}` : ''}`;
+    return `${institutionIconHtml(card, { fallbackIcon: 'creditCards', size: 22 })}<span>${label}</span>`;
   }
   const account = context.accountsById.get(transaction.accountId);
-  return account ? escapeHtml(account.name) : '-';
-}
-
-const SETTLED_STATUSES_SET = new Set(['paid', 'received']);
-
-// Cor determinística a partir do nome da categoria — usada quando a categoria não tem uma
-// cor própria definida, só para dar variedade visual aos ícones da lista.
-export function colorFromText(text) {
-  if (!text) return '#94a3b8';
-  let hash = 0;
-  for (let index = 0; index < text.length; index += 1) hash = text.charCodeAt(index) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 55%, 52%)`;
-}
-
-export function categoryBadgeHtml(category, className = 'tx-row__icon') {
-  const letter = category?.name ? category.name.trim().charAt(0).toUpperCase() : '•';
-  const color = category?.color || colorFromText(category?.name || '');
-  return `<div class="${className}" style="background:${escapeHtml(color)}">${escapeHtml(letter)}</div>`;
+  return `${institutionIconHtml(account, { size: 22 })}<span>${account ? escapeHtml(account.name) : '-'}</span>`;
 }
 
 function dateHeaderLabel(isoDate, locale) {
@@ -424,24 +501,29 @@ function rowHtml(transaction, context) {
   const { categoriesById, seriesById } = context;
   const locale = getLocale();
   const category = transaction.categoryId ? categoriesById.get(transaction.categoryId) : null;
+  const parent = category?.parentId ? categoriesById.get(category.parentId) : null;
+  const series = transaction.seriesId ? seriesById.get(transaction.seriesId) : null;
   const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
   const isCancelled = transaction.status === 'cancelled';
-  const amountClass = transaction.amountCents < 0 ? 'amount--expense' : 'amount--income';
-  const toggleTitle = isSettled ? t('transactions.quickAction.markPending') : t('transactions.quickAction.markPaid');
+  const toggleTitle = isSettled
+    ? t('transactions.quickAction.markPending')
+    : transaction.kind === 'income'
+      ? t('transactions.quickAction.markReceived')
+      : t('transactions.quickAction.markPaid');
+  const subtitle = category ? (parent ? `${parent.name} › ${category.name}` : category.name) : t('transactions.form.categoryNone');
 
   return `
-    <article class="tx-row ${isCancelled ? 'is-cancelled' : ''}" data-edit-id="${transaction.id}" tabindex="0">
-      ${categoryBadgeHtml(category)}
+    <article class="tx-row ${isCancelled ? 'is-cancelled' : ''}" data-edit-id="${transaction.id}" tabindex="0" title="${escapeHtml(subtitle)}">
+      ${categoryIconHtml(category, { parent, size: 37 })}
       <div class="tx-row__main">
         <p class="tx-row__title">${escapeHtml(transaction.description || '')}</p>
-        <p class="tx-row__subtitle">${category ? escapeHtml(category.name) : t('transactions.form.categoryNone')}${isCancelled ? ` · ${t('transactions.status.cancelled')}` : ''}</p>
+        ${series?.kind === 'installment' ? `<span class="tx-row__installment">${transaction.installmentNumber}/${series.installmentsTotal}</span>` : ''}
+        ${isCancelled ? `<span class="badge">${t('transactions.status.cancelled')}</span>` : ''}
       </div>
-      <div class="tx-row__meta">
-        ${seriesBadgeHtml(transaction, seriesById) || '<span></span>'}
-        <span class="tx-row__target">${iconSvg(transaction.creditCardId ? 'creditCards' : 'accounts', { size: 14 })} ${paymentTargetLabel(transaction, context)}</span>
-      </div>
-      <div class="tx-row__amount ${amountClass}">${centsToDisplay(transaction.amountCents, locale)}</div>
-      <button type="button" class="status-toggle ${isSettled ? 'is-settled' : ''}" data-toggle-paid-id="${transaction.id}" title="${toggleTitle}" aria-label="${toggleTitle}">${iconSvg(isSettled ? 'checkCircle' : 'circle', { size: 20 })}</button>
+      ${seriesBadgeHtml(transaction, seriesById)}
+      <span class="tx-row__target">${paymentTargetHtml(transaction, context)}</span>
+      <div class="tx-row__amount">${centsToDisplay(transaction.amountCents, locale)}</div>
+      <button type="button" class="status-toggle ${isSettled ? 'is-settled' : ''}" data-toggle-paid-id="${transaction.id}" title="${toggleTitle}" aria-label="${toggleTitle}" aria-pressed="${isSettled}" ${isCancelled ? 'disabled' : ''}>${iconSvg('thumbsUp', { size: 18 })}</button>
       <div class="tx-row__actions">
         ${seriesActionsHtml(transaction, seriesById)}
         <button type="button" class="icon-button icon-button--danger" data-delete-id="${transaction.id}" title="${t('common.delete')}" aria-label="${t('common.delete')}">${iconSvg('trash', { size: 16 })}</button>
@@ -450,9 +532,8 @@ function rowHtml(transaction, context) {
   `;
 }
 
-// Agrupar por data só faz sentido quando a lista está ordenada por data (o padrão); com
-// ordenação por valor/descrição os grupos ficariam espalhados e fora de ordem, então nesses
-// casos a lista aparece sem cabeçalhos de data.
+// Agrupar por data só faz sentido com a lista ordenada por data (o padrão); com ordenação por
+// valor/descrição a lista aparece sem cabeçalhos de data.
 function listHtml(transactions, context) {
   const locale = getLocale();
   if (filterState.sortBy !== 'date') {
@@ -482,8 +563,8 @@ function listHtml(transactions, context) {
 
 async function toggleQuickPay(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
+  if (!transaction || transaction.status === 'cancelled') return;
   if (SETTLED_STATUSES_SET.has(transaction.status)) {
-    if (!window.confirm(t('transactions.confirmEditPaid'))) return;
     await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: 'pending' }, { scope: 'only', includePaid: true });
   } else {
     const nextStatus = transaction.kind === 'income' ? 'received' : 'paid';
@@ -492,26 +573,37 @@ async function toggleQuickPay(context, transactionId) {
   render(context.container);
 }
 
+function editDraft(transaction) {
+  return {
+    kind: transaction.kind,
+    description: transaction.description || '',
+    amount: formatCentsForInput(Math.abs(transaction.amountCents), getLocale()),
+    date: transaction.date,
+    settled: SETTLED_STATUSES_SET.has(transaction.status),
+    settledTouched: true,
+    target: transaction.creditCardId ? `card:${transaction.creditCardId}` : `account:${transaction.accountId}`,
+    categoryId: transaction.categoryId || null,
+    repeatOpen: false,
+  };
+}
+
 function startEdit(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
+  if (!transaction) return;
   if (transaction.seriesId) {
     scopeState = { action: 'edit', transaction };
     renderScopeChooser(context);
     return;
   }
-  // Lançamento avulso já pago/recebido: preservado por padrão (seção 11/12), mas o usuário
-  // pode confirmar explicitamente que quer editá-lo mesmo assim.
-  let includePaid = false;
-  if (SETTLED_STATUSES_SET.has(transaction.status)) {
-    if (!window.confirm(t('transactions.confirmEditPaid'))) return;
-    includePaid = true;
-  }
-  formState = { mode: 'edit', transaction, scope: 'only', includePaid };
+  // Lançamento avulso já pago/recebido pode ser editado direto: o próprio formulário mostra a
+  // situação, e salvar só grava o que foi alterado.
+  formState = { mode: 'edit', transaction, scope: 'only', includePaid: true, draft: editDraft(transaction) };
   renderForm(context);
 }
 
 function startDelete(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
+  if (!transaction) return;
   if (transaction.seriesId) {
     scopeState = { action: 'delete', transaction };
     renderScopeChooser(context);
@@ -519,281 +611,363 @@ function startDelete(context, transactionId) {
   }
   const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
   if (!window.confirm(isSettled ? t('transactions.confirmDeletePaid') : t('transactions.deleteConfirm'))) return;
-  deleteTransactionScoped(context.activeSpace.id, transaction.id, { scope: 'only', includePaid: isSettled }).then(() => render(context.container));
+  formState = null;
+  deleteTransactionScoped(context.activeSpace.id, transaction.id, { scope: 'only', includePaid: true }).then(() => render(context.container));
 }
 
 function renderScopeChooser(context) {
   const slot = context.container.querySelector('#transactions-modal-slot');
   const { transaction, action } = scopeState;
-
-  slot.innerHTML = `
-    <div class="modal-overlay" id="transactions-modal-overlay">
-    <div class="form-note modal-dialog">
-      <p><strong>${t('transactions.scope.title')}</strong></p>
-      <div class="form-field">
-        <label><input type="radio" name="scope" value="only" checked /> ${t('transactions.scope.only')}</label>
-      </div>
-      <div class="form-field">
-        <label><input type="radio" name="scope" value="following" /> ${t('transactions.scope.following')}</label>
-      </div>
-      <div class="form-field">
-        <label><input type="radio" name="scope" value="all" /> ${t('transactions.scope.all')}</label>
-      </div>
-      <div class="form-field">
-        <label><input type="checkbox" id="scope-include-paid" /> ${t('transactions.scope.includePaid')}</label>
-      </div>
-      <div class="form-actions">
-        <button type="button" id="scope-continue" class="button button--primary">${t('transactions.scope.confirmEdit')}</button>
-        <button type="button" id="scope-cancel" class="button">${t('common.cancel')}</button>
-      </div>
-    </div>
-    </div>
-  `;
-
-  slot.querySelector('#scope-cancel').addEventListener('click', () => {
+  const closeChooser = () => {
     scopeState = null;
     render(context.container);
+  };
+
+  const modal = openModal(slot, {
+    title: action === 'delete' ? t('transactions.scope.titleDelete') : t('transactions.scope.titleEdit'),
+    size: 'sm',
+    onClose: closeChooser,
+    body: `
+      <div class="modal__body">
+        <p class="form-hint">${t('transactions.scope.title')}</p>
+        <div class="choice-group" style="grid-template-columns:1fr">
+          <label class="choice"><input type="radio" name="scope" value="only" checked /> ${t('transactions.scope.only')}</label>
+          <label class="choice"><input type="radio" name="scope" value="following" /> ${t('transactions.scope.following')}</label>
+          <label class="choice"><input type="radio" name="scope" value="all" /> ${t('transactions.scope.all')}</label>
+        </div>
+        <label class="switch"><input type="checkbox" id="scope-include-paid" /><span class="switch__track"></span>${t('transactions.scope.includePaid')}</label>
+        <div class="form-actions">
+          <button type="button" id="scope-cancel" class="button">${t('common.cancel')}</button>
+          <button type="button" id="scope-continue" class="button ${action === 'delete' ? 'button--danger' : 'button--primary'}">${action === 'delete' ? t('common.delete') : t('transactions.scope.confirmEdit')}</button>
+        </div>
+      </div>
+    `,
   });
 
-  slot.querySelector('#transactions-modal-overlay').addEventListener('click', (event) => {
-    if (event.target.id === 'transactions-modal-overlay') {
-      scopeState = null;
-      render(context.container);
-    }
-  });
-
-  slot.querySelector('#scope-continue').addEventListener('click', async () => {
-    const scope = slot.querySelector('input[name="scope"]:checked').value;
-    const includePaid = slot.querySelector('#scope-include-paid').checked;
+  modal.querySelector('#scope-cancel').addEventListener('click', closeChooser);
+  modal.querySelector('#scope-continue').addEventListener('click', async () => {
+    const scope = modal.querySelector('input[name="scope"]:checked').value;
+    // Na edição de "somente este" o próprio lançamento escolhido sempre pode ser alterado.
+    const includePaid = modal.querySelector('#scope-include-paid').checked || scope === 'only';
 
     if (action === 'delete') {
-      if (!window.confirm(t('transactions.deleteConfirm'))) return;
       const result = await deleteTransactionScoped(context.activeSpace.id, transaction.id, { scope, includePaid });
       scopeState = null;
+      formState = null;
       if (result.skippedCount > 0) window.alert(t('transactions.scope.skippedNote', { count: result.skippedCount }));
       render(context.container);
       return;
     }
 
-    formState = { mode: 'edit', transaction, scope, includePaid };
+    formState = { mode: 'edit', transaction, scope, includePaid, draft: editDraft(transaction) };
     scopeState = null;
     render(context.container);
   });
+}
+
+// Opções do campo único "Conta/Cartão": contas e cartões agrupados. Cartão só serve para despesa.
+function targetOptionsHtml(context, draft, isEdit, transaction) {
+  const accounts = context.accounts.filter((account) => !account.archived || (isEdit && transaction.accountId === account.id));
+  const cards = context.creditCards.filter((card) => !card.archived || (isEdit && transaction.creditCardId === card.id));
+  const editingCard = isEdit && transaction.creditCardId;
+  const option = (value, label, disabled = false) => `<option value="${value}" ${draft.target === value ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</option>`;
+  return `
+    <optgroup label="${t('nav.accounts')}">${accounts.map((account) => option(`account:${account.id}`, account.name, Boolean(editingCard))).join('')}</optgroup>
+    ${
+      cards.length
+        ? `<optgroup label="${t('nav.creditCards')}">${cards
+            .map((card) => option(`card:${card.id}`, card.name, draft.kind === 'income' || (isEdit && !editingCard) || (editingCard && transaction.creditCardId !== card.id)))
+            .join('')}</optgroup>`
+        : ''
+    }
+  `;
+}
+
+function installmentPreviewHtml(draft) {
+  const total = Number(draft.installmentsTotal);
+  const amountCents = parseCurrencyInputToCents(draft.amount);
+  if (!Number.isInteger(total) || total < 2 || total > MAX_INSTALLMENTS || amountCents <= 0) {
+    return t('transactions.form.installmentPreviewEmpty');
+  }
+  const amounts = buildInstallmentAmounts(amountCents, total);
+  const locale = getLocale();
+  const allEqual = amounts.every((amount) => amount === amounts[0]);
+  return allEqual
+    ? t('transactions.form.installmentPreview', { count: total, amount: `<strong>${centsToDisplay(amounts[0], locale)}</strong>` })
+    : t('transactions.form.installmentPreviewUneven', { count: total, amount: `<strong>${centsToDisplay(amounts[0], locale)}</strong>`, last: `<strong>${centsToDisplay(amounts[amounts.length - 1], locale)}</strong>` });
+}
+
+function repeatSectionHtml(draft) {
+  const kindLabel = draft.kind === 'income' ? t('transactions.form.repeatIncome') : t('transactions.form.repeatExpense');
+  return `
+    <div class="tx-form__section" id="tx-repeat-section">
+      <p class="tx-form__section-title">${kindLabel}</p>
+      <div class="choice-group">
+        <label class="choice"><input type="radio" name="repeatType" value="recurring" ${draft.repeatType === 'recurring' ? 'checked' : ''} /> ${t('transactions.recurrenceType.fixed')}</label>
+        <label class="choice"><input type="radio" name="repeatType" value="installment" ${draft.repeatType === 'installment' ? 'checked' : ''} /> ${t('transactions.recurrenceType.installment')}</label>
+      </div>
+      ${
+        draft.repeatType === 'installment'
+          ? `
+            <div class="form-row">
+              <div class="form-field">
+                <label for="tx-installments-total">${t('transactions.form.installmentsTotal')}</label>
+                <input id="tx-installments-total" name="installmentsTotal" type="number" min="2" max="${MAX_INSTALLMENTS}" value="${escapeHtml(draft.installmentsTotal)}" />
+              </div>
+              <div class="form-field">
+                <span class="form-field__label">${t('transactions.form.frequency')}</span>
+                <input type="text" value="${t('transactions.frequency.monthly')}" disabled />
+              </div>
+            </div>
+            <p class="tx-form__preview" id="tx-installment-preview">${installmentPreviewHtml(draft)}</p>
+            <p class="form-hint">${t('transactions.form.installmentAmountHint')}</p>
+          `
+          : `
+            <div class="form-row">
+              <div class="form-field">
+                <label for="tx-frequency">${t('transactions.form.frequency')}</label>
+                <select id="tx-frequency" name="frequency">
+                  ${RECURRENCE_FREQUENCIES.map((frequency) => `<option value="${frequency}" ${draft.frequency === frequency ? 'selected' : ''}>${t(`transactions.frequency.${frequency}`)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="tx-end-date">${t('transactions.form.endDate')}</label>
+                <input id="tx-end-date" name="endDate" type="date" value="${escapeHtml(draft.endDate)}" min="${escapeHtml(draft.date)}" />
+              </div>
+            </div>
+          `
+      }
+    </div>
+  `;
 }
 
 function renderForm(context) {
   const slot = context.container.querySelector('#transactions-modal-slot');
   const isEdit = formState.mode === 'edit';
   const transaction = formState.transaction;
-  const { accounts, categories, creditCards, creditCardsById } = context;
-  const recurrenceType = isEdit ? 'single' : formState.recurrenceType || 'single';
-  // Forma de pagamento (conta ou cartão) só é escolhida na criação; não é possível trocar
-  // depois (evita ter que reprocessar faturas/saldo de uma transação já existente).
-  const paymentMethod = isEdit ? (transaction.creditCardId ? 'creditCard' : 'account') : formState.paymentMethod || 'account';
+  const draft = formState.draft;
+  const isSeriesEdit = isEdit && Boolean(transaction.seriesId);
 
-  const categoryOptions = (kind) =>
-    categories
-      .filter((category) => category.kind === kind)
-      .map((category) => `<option value="${category.id}" ${isEdit && transaction.categoryId === category.id ? 'selected' : ''}>${escapeHtml(category.name)}</option>`)
-      .join('');
-
-  slot.innerHTML = `
-    <div class="modal-overlay" id="transactions-modal-overlay">
-    <form id="transaction-form" class="form-card modal-dialog">
-      <h2>${isEdit ? t('transactions.form.titleEdit') : t('transactions.form.titleCreate')}</h2>
-      <div class="form-field">
-        <label for="tx-kind">${t('transactions.form.kind')}</label>
-        <select id="tx-kind" name="kind" ${isEdit || paymentMethod === 'creditCard' ? 'disabled' : ''}>
-          <option value="expense" ${(isEdit ? transaction.kind : formState.kind || 'expense') === 'expense' ? 'selected' : ''}>${t('transactions.kind.expense')}</option>
-          <option value="income" ${!isEdit && formState.kind === 'income' ? 'selected' : ''} ${paymentMethod === 'creditCard' ? 'disabled' : ''}>${t('transactions.kind.income')}</option>
-        </select>
-      </div>
-      ${
-        !isEdit && creditCards.length > 0
-          ? `
-            <div class="form-field">
-              <label for="tx-payment-method">${t('transactions.form.paymentMethod')}</label>
-              <select id="tx-payment-method" name="paymentMethod">
-                <option value="account" ${paymentMethod === 'account' ? 'selected' : ''}>${t('transactions.paymentMethod.account')}</option>
-                <option value="creditCard" ${paymentMethod === 'creditCard' ? 'selected' : ''}>${t('transactions.paymentMethod.creditCard')}</option>
-              </select>
-            </div>
-          `
-          : ''
-      }
-      ${
-        isEdit
-          ? ''
-          : `
-            <div class="form-field">
-              <label for="tx-recurrence-type">${t('transactions.form.recurrenceType')}</label>
-              <select id="tx-recurrence-type" name="recurrenceType">
-                <option value="single" ${recurrenceType === 'single' ? 'selected' : ''}>${t('transactions.recurrenceType.single')}</option>
-                <option value="installment" ${recurrenceType === 'installment' ? 'selected' : ''}>${t('transactions.recurrenceType.installment')}</option>
-                <option value="recurring" ${recurrenceType === 'recurring' ? 'selected' : ''}>${t('transactions.recurrenceType.recurring')}</option>
-              </select>
-            </div>
-          `
-      }
-      <div class="form-field">
-        <label for="tx-description">${t('transactions.form.description')}</label>
-        <input id="tx-description" name="description" type="text" value="${isEdit ? escapeHtml(transaction.description || '') : ''}" />
-      </div>
-      <div class="form-field">
-        <label for="tx-amount">${recurrenceType === 'installment' ? t('transactions.form.totalAmount') : t('transactions.form.amount')}</label>
-        <input id="tx-amount" name="amount" type="text" inputmode="decimal" value="${isEdit ? (Math.abs(transaction.amountCents) / 100).toFixed(2) : ''}" ${isEdit && transaction.seriesId ? 'disabled' : ''} />
-      </div>
-      ${
-        !isEdit && recurrenceType === 'installment'
-          ? `
-            <div class="form-field">
-              <label for="tx-installments-total">${t('transactions.form.installmentsTotal')}</label>
-              <input id="tx-installments-total" name="installmentsTotal" type="number" min="2" max="60" value="2" />
-            </div>
-          `
-          : ''
-      }
-      ${
-        !isEdit && recurrenceType === 'recurring'
-          ? `
-            <div class="form-field">
-              <label for="tx-frequency">${t('transactions.form.frequency')}</label>
-              <select id="tx-frequency" name="frequency">
-                ${RECURRENCE_FREQUENCIES.map((frequency) => `<option value="${frequency}">${t(`transactions.frequency.${frequency}`)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="tx-end-date">${t('transactions.form.endDate')}</label>
-              <input id="tx-end-date" name="endDate" type="date" />
-            </div>
-          `
-          : ''
-      }
-      <div class="form-field">
-        <label for="tx-date">${t('transactions.form.date')}</label>
-        <input id="tx-date" name="date" type="date" value="${isEdit ? transaction.date : todayISODate()}" ${isEdit && transaction.seriesId ? 'disabled' : ''} />
-      </div>
-      <div class="form-field">
-        <label for="tx-category">${t('transactions.form.category')}</label>
-        <select id="tx-category" name="categoryId">
-          <option value="">${t('transactions.form.categoryNone')}</option>
-          ${categoryOptions(isEdit ? transaction.kind : 'expense')}
-        </select>
-      </div>
-      ${
-        paymentMethod === 'creditCard'
-          ? isEdit
-            ? `
-              <div class="form-field">
-                <label>${t('transactions.form.creditCard')}</label>
-                <input type="text" value="${escapeHtml(creditCardsById.get(transaction.creditCardId)?.name || '')}" disabled />
-              </div>
-            `
-            : `
-              <div class="form-field">
-                <label for="tx-credit-card">${t('transactions.form.creditCard')}</label>
-                <select id="tx-credit-card" name="creditCardId">
-                  ${creditCards.map((card) => `<option value="${card.id}">${escapeHtml(card.name)}</option>`).join('')}
-                </select>
-              </div>
-            `
-          : `
-            <div class="form-field">
-              <label for="tx-account">${t('transactions.form.account')}</label>
-              <select id="tx-account" name="accountId">
-                ${accounts.map((account) => `<option value="${account.id}" ${isEdit && transaction.accountId === account.id ? 'selected' : ''}>${escapeHtml(account.name)}</option>`).join('')}
-              </select>
-            </div>
-          `
-      }
-      <div class="form-field">
-        <label for="tx-status">${t('transactions.form.status')}</label>
-        <select id="tx-status" name="status">
-          ${TRANSACTION_STATUSES.filter((status) => status !== 'cancelled' || isEdit)
-            .map((status) => `<option value="${status}" ${(isEdit ? transaction.status : 'pending') === status ? 'selected' : ''}>${t(`transactions.status.${status}`)}</option>`)
-            .join('')}
-        </select>
-      </div>
-      <p class="form-error" id="tx-form-error" hidden></p>
-      <div class="form-actions">
-        <button type="submit" class="button button--primary">${t('common.save')}</button>
-        <button type="button" id="tx-form-cancel" class="button">${t('common.cancel')}</button>
-      </div>
-    </form>
-    </div>
-  `;
-
-  const kindSelect = slot.querySelector('#tx-kind');
-  const categorySelect = slot.querySelector('#tx-category');
-  if (!isEdit) {
-    kindSelect.addEventListener('change', () => {
-      categorySelect.innerHTML = `<option value="">${t('transactions.form.categoryNone')}</option>${categoryOptions(kindSelect.value)}`;
-    });
+  // Conta/Cartão padrão: a primeira conta ativa (cartão só se o usuário escolher).
+  if (!draft.target) {
+    const firstAccount = context.accounts.find((account) => !account.archived);
+    draft.target = firstAccount ? `account:${firstAccount.id}` : '';
+  }
+  if (draft.kind === 'income' && draft.target.startsWith('card:')) {
+    const firstAccount = context.accounts.find((account) => !account.archived);
+    draft.target = firstAccount ? `account:${firstAccount.id}` : '';
   }
 
-  const recurrenceSelect = slot.querySelector('#tx-recurrence-type');
-  if (recurrenceSelect) {
-    recurrenceSelect.addEventListener('change', () => {
-      formState.recurrenceType = recurrenceSelect.value;
-      renderForm(context);
-    });
-  }
-
-  const paymentMethodSelect = slot.querySelector('#tx-payment-method');
-  if (paymentMethodSelect) {
-    paymentMethodSelect.addEventListener('change', () => {
-      formState.paymentMethod = paymentMethodSelect.value;
-      renderForm(context);
-    });
-  }
-
-  slot.querySelector('#tx-form-cancel').addEventListener('click', () => {
+  const settledLabel = draft.kind === 'income' ? t('transactions.form.received') : t('transactions.form.paid');
+  const closeForm = () => {
     formState = null;
     render(context.container);
+  };
+
+  const modal = openModal(slot, {
+    title: isEdit ? t('transactions.form.titleEdit') : t('transactions.form.titleCreate'),
+    onClose: closeForm,
+    body: `
+      <form id="transaction-form" class="tx-form" novalidate>
+        <div class="segmented" role="tablist">
+          <button type="button" class="segmented__option ${draft.kind === 'expense' ? 'is-active' : ''}" data-kind="expense" ${isEdit ? 'disabled' : ''}>${t('transactions.kind.expense')}</button>
+          <button type="button" class="segmented__option ${draft.kind === 'income' ? 'is-active' : ''}" data-kind="income" ${isEdit ? 'disabled' : ''}>${t('transactions.kind.income')}</button>
+          <button type="button" class="segmented__option" data-kind="transfer" ${isEdit ? 'disabled' : ''}>${t('transactions.kind.transfer')}</button>
+        </div>
+
+        <div class="form-field">
+          <label for="tx-description">${t('transactions.form.description')}</label>
+          <input id="tx-description" name="description" type="text" autocomplete="off" placeholder="${t('transactions.form.descriptionPlaceholder')}" value="${escapeHtml(draft.description)}" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="tx-amount">${!isEdit && draft.repeatOpen && draft.repeatType === 'installment' ? t('transactions.form.totalAmount') : t('transactions.form.amount')}</label>
+            <div class="input-prefix"><span>${getLocale() === 'pt-BR' ? 'R$' : '$'}</span><input id="tx-amount" name="amount" type="text" inputmode="numeric" data-money placeholder="0,00" value="${escapeHtml(draft.amount)}" ${isSeriesEdit ? 'disabled' : ''} /></div>
+          </div>
+          <div class="form-field">
+            <label for="tx-date">${!isEdit && draft.repeatOpen ? t('transactions.form.firstDate') : t('transactions.form.date')}</label>
+            <input id="tx-date" name="date" type="date" value="${escapeHtml(draft.date)}" ${isSeriesEdit ? 'disabled' : ''} />
+          </div>
+        </div>
+        ${isSeriesEdit ? `<p class="form-hint">${t('transactions.form.seriesLockedHint')}</p>` : ''}
+
+        <label class="switch"><input type="checkbox" id="tx-settled" ${draft.settled ? 'checked' : ''} /><span class="switch__track"></span>${settledLabel}</label>
+        ${isEdit && transaction.status === 'cancelled' ? `<p class="form-hint">${t('transactions.form.cancelledHint')}</p>` : ''}
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="tx-target">${t('transactions.form.accountOrCard')}</label>
+            <select id="tx-target" name="target">${targetOptionsHtml(context, draft, isEdit, transaction)}</select>
+          </div>
+          <div class="form-field">
+            <span class="form-field__label">${t('transactions.form.category')}</span>
+            <div id="tx-category-combo"></div>
+          </div>
+        </div>
+
+        ${
+          isEdit
+            ? ''
+            : `
+              <div class="tx-form__extras">
+                <button type="button" class="tx-form__extra ${draft.repeatOpen ? 'is-active' : ''}" id="tx-toggle-repeat" title="${t('transactions.form.repeat')}" aria-pressed="${draft.repeatOpen}">${iconSvg('repeat', { size: 18 })}</button>
+              </div>
+              ${draft.repeatOpen ? repeatSectionHtml(draft) : ''}
+            `
+        }
+
+        <p class="form-error" id="tx-form-error" hidden></p>
+
+        <div class="tx-form__footer">
+          ${
+            isEdit
+              ? `<button type="button" class="icon-button icon-button--outline icon-button--round icon-button--danger" id="tx-form-delete" title="${t('common.delete')}" aria-label="${t('common.delete')}">${iconSvg('trash', { size: 18 })}</button>`
+              : `<button type="button" class="icon-button icon-button--outline icon-button--round" id="tx-form-clear" title="${t('transactions.form.clear')}" aria-label="${t('transactions.form.clear')}">${iconSvg('trash', { size: 18 })}</button>`
+          }
+          <button type="submit" class="fab-save" title="${t('common.save')}" aria-label="${t('common.save')}">${iconSvg('check', { size: 28, strokeWidth: 2.5 })}</button>
+          ${
+            isEdit
+              ? '<span></span>'
+              : `<button type="button" class="icon-button icon-button--outline icon-button--round" id="tx-form-save-another" title="${t('transactions.form.saveAndNew')}" aria-label="${t('transactions.form.saveAndNew')}">${iconSvg('plusCircle', { size: 18 })}</button>`
+          }
+        </div>
+      </form>
+    `,
   });
 
-  slot.querySelector('#transactions-modal-overlay').addEventListener('click', (event) => {
-    if (event.target.id === 'transactions-modal-overlay') {
-      formState = null;
-      render(context.container);
+  const form = modal.querySelector('#transaction-form');
+  const errorElement = modal.querySelector('#tx-form-error');
+  const settledInput = modal.querySelector('#tx-settled');
+
+  mountCategoryCombo(modal.querySelector('#tx-category-combo'), {
+    categories: context.categories,
+    kind: draft.kind,
+    value: draft.categoryId,
+    labels: {
+      placeholder: t('transactions.form.categoryPlaceholder'),
+      none: t('transactions.form.categoryNone'),
+      search: t('transactions.form.categorySearch'),
+      empty: t('transactions.form.categoryEmpty'),
+    },
+    onChange: (value) => {
+      draft.categoryId = value;
+    },
+  });
+
+  // Mantém o rascunho sempre atualizado — nada do que foi digitado se perde ao redesenhar.
+  const bind = (selector, field, eventName = 'input') => {
+    const element = modal.querySelector(selector);
+    if (!element) return;
+    element.addEventListener(eventName, () => {
+      draft[field] = element.value;
+    });
+  };
+  bind('#tx-description', 'description');
+  bind('#tx-amount', 'amount');
+  bind('#tx-target', 'target', 'change');
+  bind('#tx-frequency', 'frequency', 'change');
+  bind('#tx-end-date', 'endDate', 'change');
+
+  modal.querySelector('#tx-amount')?.addEventListener('input', () => {
+    const preview = modal.querySelector('#tx-installment-preview');
+    if (preview) preview.innerHTML = installmentPreviewHtml(draft);
+  });
+  modal.querySelector('#tx-installments-total')?.addEventListener('input', (event) => {
+    draft.installmentsTotal = event.target.value;
+    modal.querySelector('#tx-installment-preview').innerHTML = installmentPreviewHtml(draft);
+  });
+
+  // Data futura sugere "não pago"; passada/hoje sugere "pago" — até o usuário mexer na chave.
+  modal.querySelector('#tx-date').addEventListener('change', (event) => {
+    draft.date = event.target.value;
+    if (!draft.settledTouched && !isEdit) {
+      draft.settled = draft.date <= todayISODate();
+      settledInput.checked = draft.settled;
     }
+    const endDateInput = modal.querySelector('#tx-end-date');
+    if (endDateInput) endDateInput.min = draft.date;
+  });
+  settledInput.addEventListener('change', () => {
+    draft.settled = settledInput.checked;
+    draft.settledTouched = true;
   });
 
-  slot.querySelector('#transaction-form').addEventListener('submit', async (event) => {
+  for (const button of modal.querySelectorAll('[data-kind]')) {
+    button.addEventListener('click', () => {
+      const kind = button.dataset.kind;
+      if (kind === 'transfer') {
+        formState = null;
+        navigateTo('/transfers');
+        return;
+      }
+      if (kind === draft.kind) return;
+      draft.kind = kind;
+      // A categoria escolhida só continua se for do novo tipo.
+      const category = draft.categoryId ? context.categoriesById.get(draft.categoryId) : null;
+      if (category && category.kind !== kind) draft.categoryId = null;
+      renderForm(context);
+    });
+  }
+
+  modal.querySelector('#tx-toggle-repeat')?.addEventListener('click', () => {
+    draft.repeatOpen = !draft.repeatOpen;
+    renderForm(context);
+  });
+  for (const radio of modal.querySelectorAll('input[name="repeatType"]')) {
+    radio.addEventListener('change', () => {
+      draft.repeatType = radio.value;
+      renderForm(context);
+    });
+  }
+
+  modal.querySelector('#tx-form-clear')?.addEventListener('click', () => {
+    formState.draft = newDraft(draft.kind);
+    renderForm(context);
+  });
+  modal.querySelector('#tx-form-delete')?.addEventListener('click', () => startDelete(context, transaction.id));
+
+  let saveAndNew = false;
+  modal.querySelector('#tx-form-save-another')?.addEventListener('click', () => {
+    saveAndNew = true;
+    form.requestSubmit();
+  });
+
+  if (!isEdit) modal.querySelector('#tx-description').focus();
+
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const formData = new FormData(event.target);
-    const errorElement = slot.querySelector('#tx-form-error');
+    const createAnother = saveAndNew;
+    saveAndNew = false;
     const showError = (message) => {
       errorElement.textContent = message;
       errorElement.hidden = false;
     };
 
-    // "kind", e na edição de série também "date"/"amount", ficam desabilitados no formulário
-    // (não são campos "disabled" não entram no FormData) — por isso o valor vem da
-    // própria transação nesses casos, em vez do formulário. O cartão também é travado na
-    // edição (não é possível trocar a forma de pagamento depois de criado).
-    const kind = isEdit ? transaction.kind : paymentMethod === 'creditCard' ? 'expense' : String(formData.get('kind'));
-    const description = String(formData.get('description') || '').trim();
-    const categoryId = String(formData.get('categoryId') || '') || null;
-    const accountId = paymentMethod === 'account' ? String(formData.get('accountId') || '') : null;
-    const creditCardId = paymentMethod === 'creditCard' ? (isEdit ? transaction.creditCardId : String(formData.get('creditCardId') || '')) : null;
-    const status = String(formData.get('status'));
-    const dateAndAmountEditable = !isEdit || !transaction.seriesId;
-    const date = dateAndAmountEditable ? String(formData.get('date')) : transaction.date;
-    const amountCents = dateAndAmountEditable
-      ? parseCurrencyInputToCents(String(formData.get('amount') || '0'))
-      : Math.abs(transaction.amountCents);
+    const kind = draft.kind;
+    const description = draft.description.trim();
+    const [targetType, targetId] = (draft.target || '').split(':');
+    const accountId = targetType === 'account' ? targetId : null;
+    const creditCardId = targetType === 'card' ? targetId : null;
+    const categoryId = draft.categoryId || null;
+    const date = draft.date;
+    const amountCents = parseCurrencyInputToCents(draft.amount);
+    const settledStatus = kind === 'income' ? 'received' : 'paid';
 
     if (!isRequired(description)) return showError(t('transactions.validation.descriptionRequired'));
-    if (paymentMethod === 'account' && !isRequired(accountId)) return showError(t('transactions.validation.accountRequired'));
-    if (paymentMethod === 'creditCard' && !isEdit && !isRequired(creditCardId)) return showError(t('transactions.validation.creditCardRequired'));
-    if (dateAndAmountEditable) {
-      if (!isValidISODate(date)) return showError(t('transactions.validation.dateInvalid'));
+    if (!isSeriesEdit) {
       if (amountCents <= 0) return showError(t('transactions.validation.amountInvalid'));
+      if (!isValidISODate(date)) return showError(t('transactions.validation.dateInvalid'));
     }
+    if (!accountId && !creditCardId) return showError(t('transactions.validation.accountRequired'));
+    if (creditCardId && kind === 'income') return showError(t('transactions.validation.cardIncome'));
 
     if (isEdit) {
-      const changes = { description, categoryId, accountId, status };
+      // A situação só muda se a chave foi alterada (preserva "cancelado" e o tipo de baixa).
+      const wasSettled = SETTLED_STATUSES_SET.has(transaction.status);
+      const status = draft.settled === wasSettled ? transaction.status : draft.settled ? settledStatus : 'pending';
+      const changes = { description, categoryId, status };
+      if (!transaction.creditCardId) changes.accountId = accountId;
       if (!transaction.seriesId) {
         changes.amountCents = kind === 'expense' ? -amountCents : amountCents;
         changes.date = date;
@@ -808,42 +982,24 @@ function renderForm(context) {
       return;
     }
 
-    if (recurrenceType === 'installment') {
-      const installmentsTotal = Number(formData.get('installmentsTotal'));
-      if (!Number.isInteger(installmentsTotal) || installmentsTotal < 2 || installmentsTotal > 60) {
+    const status = draft.settled ? settledStatus : 'pending';
+    const common = { kind, description, date, categoryId, accountId, creditCardId, status };
+
+    if (draft.repeatOpen && draft.repeatType === 'installment') {
+      const installmentsTotal = Number(draft.installmentsTotal);
+      if (!Number.isInteger(installmentsTotal) || installmentsTotal < 2 || installmentsTotal > MAX_INSTALLMENTS) {
         return showError(t('transactions.validation.installmentsInvalid'));
       }
-      await createInstallmentSeries(context.activeSpace.id, {
-        kind,
-        description,
-        totalAmountCents: amountCents,
-        installmentsTotal,
-        date,
-        categoryId,
-        accountId,
-        creditCardId,
-        status,
-      });
-    } else if (recurrenceType === 'recurring') {
-      const frequency = String(formData.get('frequency'));
-      const endDate = String(formData.get('endDate') || '') || null;
-      await createRecurringSeries(context.activeSpace.id, {
-        kind,
-        description,
-        amountCents,
-        frequency,
-        date,
-        endDate,
-        categoryId,
-        accountId,
-        creditCardId,
-        status,
-      });
+      await createInstallmentSeries(context.activeSpace.id, { ...common, totalAmountCents: amountCents, installmentsTotal });
+    } else if (draft.repeatOpen && draft.repeatType === 'recurring') {
+      if (draft.endDate && (!isValidISODate(draft.endDate) || draft.endDate < date)) return showError(t('transactions.validation.endDateInvalid'));
+      await createRecurringSeries(context.activeSpace.id, { ...common, amountCents, frequency: draft.frequency, endDate: draft.endDate || null });
     } else {
-      await createSimpleTransaction(context.activeSpace.id, { kind, description, amountCents, date, categoryId, accountId, creditCardId, status });
+      await createSimpleTransaction(context.activeSpace.id, { ...common, amountCents });
     }
 
-    formState = null;
+    // "Salvar e criar outro": mantém tipo, data e conta para agilizar uma sequência de lançamentos.
+    formState = createAnother ? { mode: 'create', draft: { ...newDraft(kind), date, target: draft.target } } : null;
     render(context.container);
   });
 }

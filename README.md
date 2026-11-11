@@ -29,77 +29,96 @@ limite utilizado/disponível, recalculados a partir das faturas em aberto. A apl
 
 Etapa 6: **Dashboard** completo — indicadores reais (saldo total, receitas/despesas/resultado do
 período, limite utilizado/disponível somado de todos os cartões, faturas pendentes, próximos
-vencimentos) e os 6 gráficos pedidos (receitas vs despesas, despesas por categoria, evolução
-mensal, comparação com o mês anterior, distribuição dos saldos por conta, distribuição dos gastos
-por cartão), com um seletor de mês. **Relatórios**: filtros combináveis (mês, tipo, conta, cartão,
-categoria) e as tabelas pedidas (receitas/despesas por categoria, despesas por subcategoria,
-comparativo mensal de 12 meses, comparativo anual, maiores despesas, gastos por conta, gastos por
-cartão, histórico de movimentações), com exportação em **CSV** e um botão **Imprimir / PDF** (usa
-a função de impressão do navegador, que permite salvar como PDF — não gera um `.xlsx`/`.pdf` de
-verdade, o que exigiria uma biblioteca adicional).
+vencimentos), com um seletor de mês. **Relatórios** em abas (ver "Relatórios" abaixo), com
+exportação em **CSV** e um botão **Imprimir / PDF** (usa a função de impressão do navegador, que
+permite salvar como PDF — não gera um `.xlsx`/`.pdf` de verdade, o que exigiria uma biblioteca
+adicional).
 
 Compartilhamento (múltiplos espaços/participantes) ainda não está implementado — a tela de
 Configurações indica em qual etapa chega.
 
-### Melhorias de usabilidade
+### Leiaute
 
-Melhorias de usabilidade aplicadas ao LEDGER:
+- **Menu lateral flutuante** (cartão arredondado à esquerda), sempre lateral em qualquer largura:
+  uso frequente (Visão geral, Lançamentos, Relatórios, Limite de gastos, Transferências, Faturas)
+  separado dos cadastros (Contas, Cartões, Categorias, Configurações). Mostra quantas contas e
+  cartões ativos existem, pode ser recolhido para só ícones (a escolha fica salva) e, no rodapé,
+  traz o espaço ativo, o modo (local/online) e o seletor de idioma. Em telas estreitas vira uma
+  faixa de ícones.
+- **Cada tela é um cartão** sobre fundo neutro; a Visão geral é uma grade de painéis.
+- **Modo escuro**: chave na Visão geral; sem escolha salva, segue o sistema operacional. Todas as
+  cores são variáveis CSS em `css/main.css` (`--color-primary` define a cor de destaque).
+- **Responsivo**: no celular, os formulários abrem como painel de tela cheia e as listas ficam
+  enxutas (ícone, descrição, valor e situação).
+- **Ações de linha** (editar, excluir, arquivar, pausar/retomar série…) são botões com ícone.
+- **Campos de valor** com máscara monetária: os dígitos entram pela direita (`1` → `0,01`,
+  `150000` → `1.500,00`). **Campos de data** abrem o calendário ao clicar e continuam digitáveis.
 
-- **Saldo confirmado vs. previsto**: o saldo das contas (e do Dashboard) agora distingue o que já
-  foi pago/recebido do que ainda está pendente, em vez de misturar os dois em um único número.
-- **Limite de gastos**: orçamento mensal por categoria, com barra de progresso e aviso ao
-  aproximar-se do limite (tela nova, acessível pelo menu).
-- **Painel**: saudação e botões rápidos de Nova despesa/receita/transferência logo no topo.
-- **Menu lateral agrupado**: telas de uso frequente (Painel, Lançamentos, Transferências,
-  Faturas, Limite de gastos, Relatórios) separadas das telas de cadastro/configuração (Contas,
-  Cartões, Categorias, Configurações) — continua fixo à esquerda em qualquer largura de tela.
-- **Lançamentos em lista agrupada por data** (com rótulo "Hoje"), no lugar da tabela crua —
-  cada lançamento mostra um ícone colorido, categoria/conta/status como subtítulo, e um botão de
-  marcar como pago/recebido direto na linha, sem precisar abrir o formulário.
-- **Criar/editar lançamento em modal** (sobreposto, fecha com Esc ou clicando fora) em vez de
-  empurrar a lista para baixo.
-- **Atalhos de teclado** `D`/`R`/`T` para nova despesa/receita/transferência, quando o foco não
-  está em um campo de formulário.
+### Visão geral
 
-Os ícones de bancos/cartões (`assets/icons/institutions/`, 24 instituições) servem só para a
-lista de instituições, não para a identidade visual do app; os badges de categoria usam, por
-enquanto, a inicial da categoria sobre uma cor gerada a partir do nome.
+Saudação com o período e navegação por mês; resumo de receitas/despesas do mês (com botão para
+ocultar valores) e atalhos de Despesa, Receita, Transferência e "+"; painéis recolhíveis de
+**Maiores gastos** (rosca + top 5 categorias com %), **Despesas a pagar** e **Receitas a
+receber**, **Minhas contas** (saldo confirmado e previsto), **Meus cartões** (fatura do mês e limite
+disponível) e **Limite de gastos**.
+
+### Lançamentos
+
+- Barra com o botão **+ Lançamento** (Nova despesa / receita / transferência, também pelos atalhos
+  `D`/`R`/`T`), navegação por mês (‹ › ou setas do teclado) e filtros em linha: **Origem** (contas
+  e cartões), **Tipo**, **Categorias** (uma categoria principal inclui as subcategorias),
+  **Situação** e busca; valor mínimo/máximo e ordenação ficam em "mais filtros".
+- Lista agrupada por dia ("Hoje"), com ícone da categoria, descrição, indicação de fixo/parcelado,
+  conta ou cartão (com o logo da instituição), valor e o **joinha** de pago/pendente (verde = pago,
+  cinza = pendente; o clique alterna). Rodapé com receitas, despesas, saldo e previsto do mês.
+- **Formulário em janela**, compacto: abas Despesa/Receita/Transferência, descrição, valor e data,
+  chave **Lançamento pago/recebido** (sugere "não pago" para datas futuras), campo único
+  **Conta/Cartão** e **categoria com busca, filtrada pelo tipo** (despesa ou receita), com as
+  subcategorias abaixo da principal. A **repetição** fica recolhida no fim: **Lançamento fixo**
+  (semanal/mensal/anual, com data final opcional) ou **Lançamento parcelado** (com a prévia
+  "Serão lançadas N parcelas de R$ X"). Botões Limpar, Salvar e **Salvar e criar outro**.
+  O rascunho é preservado ao trocar tipo, repetição ou conta.
+
+### Categorias, contas e cartões
+
+- **Categorias** em abas Despesas/Receitas; o cadastro escolhe **ícone e cor** (subcategorias
+  herdam os da principal) e cria subcategoria direto na linha. As categorias padrão já vêm com
+  ícone e cor; espaços criados antes disso recebem os ícones uma única vez, sem mexer em
+  categorias personalizadas. Arquivadas ficam numa seção à parte.
+- **Contas** e **cartões** em lista com o **logo da instituição** (escolhido no cadastro, entre os
+  24 de `assets/icons/institutions/`), saldo confirmado/previsto ou limite disponível, e seção de
+  arquivados. Cadastros abrem em janela.
+
+### Relatórios
+
+Navegação por mês, filtro de origem (conta ou cartão) e opção **Considerar não pagas**, em abas:
+
+- **Categorias**: despesas ou receitas em **rosca ou barras**, ranking com valor, % e barra de
+  proporção; cada categoria abre as subcategorias. Exporta CSV.
+- **Entradas × Saídas**: indicadores do mês e de 12 meses, gráfico de barras (receitas e despesas)
+  com a linha do **saldo acumulado**, e tabela mês a mês.
+- **Contas e cartões**: gastos do mês por conta e por cartão.
+- **Movimentações**: maiores despesas e histórico do mês, com exportação CSV.
 
 ### Parcelas e recorrências geradas sob demanda
 
 Ao criar um lançamento parcelado ou recorrente (semanal, mensal ou anual), só as ocorrências até o
 fim do mês atual (ou do mês da primeira ocorrência, se ela for futura) são gravadas. As demais
-passam a existir quando o mês delas é visualizado — na navegação ‹ mês › da tela de Lançamentos
-ou da Visão geral — e o mês corrente é sempre completado ao abrir o app. A série guarda um molde
-(`template`) com descrição, valor, categoria e conta/cartão; editar "este e os próximos"/"todos"
-atualiza também o molde, e excluir "este e os próximos"/"todos" encerra a série, para que nada
-volte a ser gerado. Uma parcela excluída individualmente nunca é recriada. Parcelas de cartão
-ainda não geradas continuam contando no **limite utilizado** do cartão desde a compra.
-
-### Visão geral, ícones e identidade
-
-A Visão geral reúne saudação e período com
-navegação por mês, resumo de receitas/despesas do mês com botão para ocultar valores e atalhos
-de Despesa/Receita/Transferência, **Maiores gastos** (rosca + top 5 categorias com %),
-**Despesas a pagar** e **Receitas a receber** do mês, **Minhas contas**, **Meus cartões** (fatura
-do mês e limite disponível) e **Limite de gastos**. Os 6 gráficos analíticos da Etapa 6 ficam numa
-seção recolhível no fim da página. A tela de **Lançamentos** ganhou navegação por mês (‹ › ou
-setas do teclado), filtros em linha, linhas com ícone de recorrência/parcela (ex.: 2/10), conta,
-valor e marcador de pago, e rodapé com receitas, despesas, saldo e previsto do mês.
-
-O LEDGER tem ícone próprio (`assets/icons/ledger.svg`, um livro-razão com colunas de
-lançamentos), usado como favicon e no cabeçalho, e todo item do menu lateral tem um ícone além do
-nome (`js/utils/icons.js`, SVGs inline — funcionam offline).
+passam a existir quando o mês delas é visualizado — na navegação ‹ mês › da tela de Lançamentos,
+da Visão geral ou dos Relatórios — e o mês corrente é sempre completado ao abrir o app. A série
+guarda um molde (`template`) com tipo, descrição, valor, categoria e conta/cartão; editar "este e
+os próximos"/"todos" atualiza também o molde, e excluir "este e os próximos"/"todos" encerra a
+série, para que nada volte a ser gerado. Uma parcela excluída individualmente nunca é recriada.
+Parcelas de cartão ainda não geradas continuam contando no **limite utilizado** do cartão desde a
+compra.
 
 ### Gráficos exigem internet
 
-Os gráficos do Dashboard usam **Chart.js via CDN** (`cdnjs.cloudflare.com`) — isso é a única
-dependência externa do projeto e só é baixada quando a página carrega com acesso à internet. Sem
-conexão, os indicadores e tabelas continuam funcionando normalmente; apenas os gráficos ficam em
-branco (nenhum erro é lançado). Isso foi verificado neste ambiente de desenvolvimento, cujo
-navegador de teste bloqueia domínios externos — por isso os gráficos em si não puderam ser
-verificados visualmente aqui, só a dependência de rede e o fallback. Teste em um navegador comum
-para confirmar a renderização visual dos 6 gráficos.
+Os gráficos usam **Chart.js 4.4.1 via CDN** (`cdnjs.cloudflare.com`) — a única dependência
+externa do projeto, baixada quando a página carrega com acesso à internet. Sem conexão, os
+indicadores, listas e tabelas continuam funcionando; só os gráficos ficam em branco (sem erro). A
+fonte Inter também vem do Google Fonts e, offline, cai para a fonte do sistema.
+
 
 ### Simplificações deliberadas da Etapa 5
 
@@ -137,7 +156,7 @@ implementada.
 
 A interface suporta **pt-BR** e **en-US** (`js/core/i18n.js` + `js/locales/`). O idioma é
 detectado automaticamente pelo navegador na primeira visita e pode ser trocado a qualquer momento
-pelo seletor no cabeçalho; a preferência fica salva no `localStorage` do dispositivo. Categorias
+pelo seletor no rodapé do menu lateral; a preferência fica salva no `localStorage` do dispositivo. Categorias
 padrão são semeadas traduzidas no idioma vigente no momento da criação do espaço e, depois disso,
 são texto comum editável pelo usuário (não são retraduzidas ao trocar o idioma da interface).
 
@@ -164,15 +183,16 @@ ficará disponível na tela de Configurações, com migração dos dados locais 
 
 ```
 index.html
-assets/icons/   ícones de instituições financeiras (ver nota acima)
-css/            estilos (main, layout, components, responsive)
+assets/icons/   ícone do LEDGER e logos de instituições financeiras (contas e cartões)
+css/            estilos (main: cores/tema, layout: casca e menu, components, reports, responsive)
 js/
   app.js        ponto de entrada
-  core/         database (IndexedDB), router, i18n, app-state, auth, permissions, sync, bootstrap
+  core/         database (IndexedDB), router, i18n, theme, app-state, auth, permissions, sync, bootstrap
   locales/      dicionários pt-BR e en-US
   modules/      uma pasta por tela (dashboard, accounts, transactions, budgets, ...)
   services/     repositórios (accounts, categories, creditCards, transfers, transactions, invoices, analytics, budgets) — regras de negócio
-  utils/        ids, currency, dates, validation, html, observable, recurrence, csv, icons
+  utils/        ids, currency, moneyInput, dates, validation, html, observable, recurrence, csv, icons,
+                ui (ícones de categoria/instituição, seletores, modal), categoryCombo (seletor de categoria)
 tools/          servidor estático de desenvolvimento
 tests/          testes de unidade (node --test)
 ```
