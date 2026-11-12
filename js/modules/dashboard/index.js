@@ -1,6 +1,5 @@
 import { t, getLocale } from '../../core/i18n.js';
-import { getActiveSpace } from '../../core/bootstrap.js';
-import { getTheme, setTheme } from '../../core/theme.js';
+import { getActiveSpace, spaceDisplayName } from '../../core/bootstrap.js';
 import { listAccounts, calculateConsolidatedBalanceCents } from '../../services/accountRepository.js';
 import { listCategories } from '../../services/categoryRepository.js';
 import { listCreditCardsWithUsage } from '../../services/creditCardRepository.js';
@@ -17,7 +16,6 @@ import { categoryIconHtml, institutionIconHtml, colorFromText } from '../../util
 import { navigateTo, isRouteEntering } from '../../core/router.js';
 import { countUpMoney } from '../../utils/motion.js';
 import { openCreateForm, setTransactionsMonth } from '../transactions/index.js';
-
 // Visão geral: saudação e período, resumo do mês com atalhos, maiores gastos, contas a pagar e a
 // receber, contas, cartões e limites de gastos. Cada painel pode ser recolhido.
 const chartInstances = {};
@@ -187,22 +185,17 @@ export async function render(container) {
           .join('')}</ul>
         <div class="ov-panel__footer ov-panel__footer--end"><button type="button" class="button button--small" data-goto-transactions>${t('dashboard.seeAll', { count: items.length })} ${iconSvg('chevronRight', { size: 14 })}</button></div>`;
 
-  const isDark = getTheme() === 'dark';
-
   container.innerHTML = `
     <section class="view ov">
       <div class="ov-welcome">
         <div class="ov-welcome__left">
-          <span>${t(greetingKey())}${activeSpace ? `, <strong>${escapeHtml(activeSpace.name)}</strong>` : ''}</span>
+          <span>${t(greetingKey())}${spaceDisplayName(activeSpace) ? `, <strong>${escapeHtml(spaceDisplayName(activeSpace))}</strong>` : ''}</span>
           <span class="ov-welcome__period">
             ${t('dashboard.currentPeriod')}
             <button type="button" class="icon-button" id="ov-prev" title="${t('transactions.monthNav.previous')}">${iconSvg('chevronLeft', { size: 16 })}</button>
             <button type="button" class="ov-welcome__period-label" id="ov-today" title="${t('transactions.monthNav.today')}">${periodLabel(periodState, locale)}</button>
             <button type="button" class="icon-button" id="ov-next" title="${t('transactions.monthNav.next')}">${iconSvg('chevronRight', { size: 16 })}</button>
           </span>
-        </div>
-        <div class="ov-welcome__right">
-          <label class="switch"><input type="checkbox" id="ov-dark-mode" ${isDark ? 'checked' : ''} /><span class="switch__track"></span>${t('dashboard.darkMode')}</label>
         </div>
       </div>
 
@@ -368,13 +361,8 @@ export async function render(container) {
     writeStorage(HIDE_VALUES_KEY, !hideValues);
     render(container);
   });
-  container.querySelector('#ov-dark-mode').addEventListener('change', (event) => {
-    setTheme(event.target.checked ? 'dark' : 'light');
-    render(container);
-  });
 
   if (isRouteEntering()) countUpMoney(container.querySelector('.ov'), locale);
-
   for (const button of container.querySelectorAll('[data-collapse]')) {
     button.addEventListener('click', () => {
       const id = button.dataset.collapse;

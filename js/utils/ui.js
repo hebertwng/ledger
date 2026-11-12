@@ -123,8 +123,12 @@ export function institutionPickerHtml(name, selected, noneLabel) {
 // Modal padrão: sobreposição + caixa com título e botão de fechar. Devolve o elemento da caixa.
 // Fecha com o X, clicando fora ou com Esc (chama onClose).
 export function openModal(slot, { title, body, size = 'md', onClose }) {
+  // Redesenho de uma janela que já está aberta (ex.: trocar Despesa ↔ Receita, abrir a repetição):
+  // troca só o conteúdo, sem repetir a animação de abertura — senão a janela "pisca".
+  const previous = slot.querySelector('[data-modal-overlay]');
+  const isRefresh = Boolean(previous && !previous.classList.contains('is-closing'));
   slot.innerHTML = `
-    <div class="modal-overlay" data-modal-overlay>
+    <div class="modal-overlay ${isRefresh ? 'is-refresh' : ''}" data-modal-overlay>
       <div class="modal modal--${size}" role="dialog" aria-modal="true">
         <header class="modal__header">
           <h2 class="modal__title">${title}</h2>
@@ -166,4 +170,77 @@ export function openModal(slot, { title, body, size = 'md', onClose }) {
   });
   overlay.querySelector('[data-modal-close]').addEventListener('click', close);
   return overlay.querySelector('.modal');
+}
+
+/**
+ * Confirmação no padrão das janelas do app (substitui o window.confirm, que alguns navegadores —
+ * como o navegador embutido do app — bloqueiam e respondem "cancelar" sozinhos).
+ * Abre por cima de qualquer janela aberta. Devolve uma Promise<boolean>: true ao confirmar;
+ * false ao cancelar, fechar, clicar fora ou apertar Esc. Enter confirma.
+ *
+ *   if (!(await confirmDialog(t('x.deleteConfirm')))) return;
+ */
+export function confirmDialog(message, { title, confirmLabel, cancelLabel, danger = true } = {}) {
+  const pt = (document.documentElement.lang || 'pt-BR').startsWith('pt');
+  const labels = {
+    title: title || (pt ? 'Confirmar' : 'Confirm'),
+    confirm: confirmLabel || (danger ? (pt ? 'Excluir' : 'Delete') : pt ? 'Confirmar' : 'Confirm'),
+    cancel: cancelLabel || (pt ? 'Cancelar' : 'Cancel'),
+  };
+  return new Promise((resolve) => {
+    const previousFocus = document.activeElement;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div class="modal-overlay modal-overlay--confirm" data-confirm-overlay>
+        <div class="modal modal--sm confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+          <header class="modal__header">
+            <h2 class="modal__title" id="confirm-dialog-title">${escapeHtml(labels.title)}</h2>
+          </header>
+          <div class="modal__body">
+            <div class="confirm-dialog__message">
+              <span class="confirm-dialog__icon ${danger ? 'is-danger' : ''}">${iconSvg(danger ? 'trash' : 'info', { size: 20 })}</span>
+              <p id="confirm-dialog-message">${escapeHtml(message)}</p>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="button" data-confirm-cancel>${escapeHtml(labels.cancel)}</button>
+              <button type="button" class="button ${danger ? 'button--danger' : 'button--primary'}" data-confirm-ok>${escapeHtml(labels.confirm)}</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(host);
+    const overlay = host.querySelector('[data-confirm-overlay]');
+    let done = false;
+    const finish = (answer) => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('keydown', onKey, true);
+      const remove = () => {
+        host.remove();
+        previousFocus?.focus?.();
+        resolve(answer);
+      };
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return remove();
+      overlay.classList.add('is-closing');
+      setTimeout(remove, 170);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(false);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(true);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.addEventListener('mousedown', (event) => {
+      if (event.target === overlay) finish(false);
+    });
+    host.querySelector('[data-confirm-cancel]').addEventListener('click', () => finish(false));
+    host.querySelector('[data-confirm-ok]').addEventListener('click', () => finish(true));
+    host.querySelector('[data-confirm-ok]').focus();
+  });
 }

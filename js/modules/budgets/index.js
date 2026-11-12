@@ -9,6 +9,7 @@ import { centsToDisplay, parseCurrencyInputToCents } from '../../utils/currency.
 import { todayISODate, monthRange } from '../../utils/dates.js';
 import { isRequired } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
+import { confirmDialog } from '../../utils/ui.js';
 
 let formState = null;
 let periodState = todayISODate().slice(0, 7);
@@ -78,7 +79,7 @@ export async function render(container) {
 
   for (const button of container.querySelectorAll('[data-delete-id]')) {
     button.addEventListener('click', async () => {
-      if (!window.confirm(t('budgets.deleteConfirm'))) return;
+      if (!(await confirmDialog(t('budgets.deleteConfirm')))) return;
       await deleteBudget(button.dataset.deleteId);
       render(container);
     });

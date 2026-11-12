@@ -1,7 +1,7 @@
 // Camada de persistência local (IndexedDB). Um object store por coleção (espelha a seção 4
 // da especificação, mais "outbox" e "appMeta", que são internos e não documentados lá).
 const DB_NAME = 'ledger';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORE_DEFINITIONS = [
   { name: 'spaces', keyPath: 'id' },
@@ -31,12 +31,41 @@ const STORE_DEFINITIONS = [
   },
   { name: 'transfers', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }] },
   { name: 'budgets', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }, { name: 'byCategory', keyPath: 'categoryId' }] },
+  // Investimentos (versão 3): ficam à parte dos lançamentos — não entram nas somas do mês.
+  { name: 'investments', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }] },
+  {
+    name: 'investmentEntries',
+    keyPath: 'id',
+    indexes: [
+      { name: 'bySpace', keyPath: 'spaceId' },
+      { name: 'byInvestment', keyPath: 'investmentId' },
+    ],
+  },
   { name: 'auditLogs', keyPath: 'id', indexes: [{ name: 'bySpace', keyPath: 'spaceId' }] },
   { name: 'outbox', keyPath: 'opId' },
   { name: 'appMeta', keyPath: 'key' },
 ];
 
 let dbPromise = null;
+
+// Aviso de "dados mudaram": toda gravação passa por putRecord/deleteRecord/replaceStores, então
+// quem precisa reagir a qualquer mudança (ex.: Ledi recalculando a saúde financeira) assina aqui.
+const changeListeners = new Set();
+
+export function onDataChange(listener) {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
+function emitDataChange(storeNames) {
+  for (const listener of changeListeners) {
+    try {
+      listener(storeNames);
+    } catch {
+      // Um ouvinte com erro não pode impedir a gravação de terminar.
+    }
+  }
+}
 
 export function openDatabase() {
   if (dbPromise) return dbPromise;
@@ -73,6 +102,7 @@ export async function putRecord(storeName, record) {
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readwrite');
   await promisifyRequest(tx.objectStore(storeName).put(record));
+  emitDataChange([storeName]);
   return record;
 }
 
@@ -120,10 +150,12 @@ export async function replaceStores(storeNames, recordsByStore = {}) {
     for (const record of recordsByStore[name] || []) store.put(record);
   }
   await done;
+  emitDataChange(storeNames);
 }
 
 export async function deleteRecord(storeName, key) {
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readwrite');
   await promisifyRequest(tx.objectStore(storeName).delete(key));
+  emitDataChange([storeName]);
 }

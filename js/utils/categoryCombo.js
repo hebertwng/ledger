@@ -77,31 +77,41 @@ export function mountCategoryCombo(root, { categories, kind, value = null, label
     if (highlighted >= options.length) highlighted = Math.max(0, options.length - 1);
     root.classList.add('combo');
     root.classList.toggle('is-open', open);
-    root.innerHTML = `
-      <button type="button" class="combo__button" aria-haspopup="listbox" aria-expanded="${open}">
-        ${selectedHtml()}
-        ${iconSvg('chevronDown', { size: 16 })}
-      </button>
-      ${
-        open
-          ? `<div class="combo__panel">
-              <label class="combo__search">${iconSvg('search', { size: 16 })}<input type="text" value="${escapeHtml(query)}" placeholder="${escapeHtml(labels.search)}" aria-label="${escapeHtml(labels.search)}" /></label>
-              <ul class="combo__list" role="listbox">${listHtml(options)}</ul>
-            </div>`
-          : ''
-      }
-    `;
+    // Aberto, o próprio campo vira a caixa de busca (digita-se nele mesmo); fechado, mostra a
+    // categoria escolhida.
+    const selected = currentValue ? byId.get(currentValue) : null;
+    root.innerHTML = open
+      ? `
+        <label class="combo__button combo__button--typing">
+          ${iconSvg('search', { size: 16 })}
+          <input type="text" value="${escapeHtml(query)}" placeholder="${escapeHtml(selected ? selected.name : labels.search)}" aria-label="${escapeHtml(labels.search)}" role="combobox" aria-expanded="true" autocomplete="off" />
+          ${iconSvg('chevronUp', { size: 16 })}
+        </label>
+        <div class="combo__panel">
+          <ul class="combo__list" role="listbox">${listHtml(options)}</ul>
+        </div>`
+      : `
+        <button type="button" class="combo__button" aria-haspopup="listbox" aria-expanded="false">
+          ${selectedHtml()}
+          ${iconSvg('chevronDown', { size: 16 })}
+        </button>`;
 
-    root.querySelector('.combo__button').addEventListener('click', () => {
-      open = !open;
-      query = '';
-      highlighted = 0;
-      render();
-      if (open) root.querySelector('.combo__search input').focus();
-    });
-
-    if (!open) return;
-    const input = root.querySelector('.combo__search input');
+    if (!open) {
+      const button = root.querySelector('.combo__button');
+      button.addEventListener('click', () => openWith(''));
+      // Com o campo focado, digitar já abre a lista filtrando pelo que foi digitado.
+      button.addEventListener('keydown', (event) => {
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.key !== ' ') {
+          event.preventDefault();
+          openWith(event.key);
+        } else if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openWith('');
+        }
+      });
+      return;
+    }
+    const input = root.querySelector('.combo__button--typing input');
     input.addEventListener('input', () => {
       query = input.value;
       highlighted = 0;
@@ -127,6 +137,16 @@ export function mountCategoryCombo(root, { categories, kind, value = null, label
       }
     });
     bindOptions();
+  }
+
+  function openWith(text) {
+    open = true;
+    query = text;
+    highlighted = 0;
+    render();
+    const input = root.querySelector('.combo__button--typing input');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
   }
 
   function bindOptions() {

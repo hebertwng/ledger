@@ -9,6 +9,7 @@ import { getAllByIndex } from '../../core/database.js';
 import { centsToDisplay } from '../../utils/currency.js';
 import { todayISODate, formatDateDisplay, formatReferenceMonth } from '../../utils/dates.js';
 import { escapeHtml } from '../../utils/html.js';
+import { mascotReact } from '../../core/mascot.js';
 
 let payState = null;
 let expandedInvoiceId = null;
@@ -191,8 +192,14 @@ function renderPayForm(context) {
     const accountId = String(formData.get('accountId'));
     const paymentDate = String(formData.get('date'));
 
-    await payInvoice(context.activeSpace.id, invoice.id, { accountId, paymentDate });
+    try {
+      await payInvoice(context.activeSpace.id, invoice.id, { accountId, paymentDate });
+    } catch (error) {
+      mascotReact('error', { message: error.message });
+      return;
+    }
     payState = null;
     render(context.container);
+    mascotReact('invoicePaid');
   });
 }

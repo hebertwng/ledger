@@ -3,6 +3,8 @@ import { todayISODate } from '../../utils/dates.js';
 import { iconSvg } from '../../utils/icons.js';
 import { escapeHtml } from '../../utils/html.js';
 import { openModal } from '../../utils/ui.js';
+import { getActiveSpace, updateOwnerName } from '../../core/bootstrap.js';
+import { getThemePreference, setThemePreference } from '../../core/theme.js';
 import {
   buildBackup,
   validateBackup,
@@ -11,11 +13,145 @@ import {
   deleteMovements,
   deleteAllData,
 } from '../../services/dataManagementRepository.js';
+import { formatCentsForInput } from '../../utils/moneyInput.js';
+import { parseCurrencyInputToCents } from '../../utils/currency.js';
+import {
+  MASCOT_NAME,
+  isMascotAvailable,
+  getMascotSettings,
+  updateMascotSettings,
+  mascotReact,
+  mascotReactAfterReload,
+  mascotMessage,
+  openGenderChooser,
+} from '../../core/mascot.js';
 
-export function render(container) {
+function mascotSectionHtml() {
+  if (!isMascotAvailable()) return '';
+  const settings = getMascotSettings();
+  return `
+    <p class="section-title">${iconSvg('sparkles', { size: 16 })} ${t('settings.mascot.title')}</p>
+    <p class="form-hint" style="margin-bottom:12px">${t('settings.mascot.description')}</p>
+    <div class="mascot-settings">
+      <div class="mascot-settings__fields">
+        <label class="switch"><input type="checkbox" id="mascot-enabled" ${settings.enabled && settings.gender ? 'checked' : ''} /><span class="switch__track"></span>${t('settings.mascot.enabled')}</label>
+        <div class="form-field">
+          <span class="form-label">${t('settings.mascot.gender')}</span>
+          <div class="lm-segment" role="radiogroup" aria-label="${t('settings.mascot.gender')}">
+            ${['m', 'f']
+              .map((value) => `<button type="button" role="radio" aria-checked="${settings.gender === value}" class="${settings.gender === value ? 'is-on' : ''}" data-mascot-gender="${value}">${MASCOT_NAME} · ${t(`mascot.gender.${value}`)}</button>`)
+              .join('')}
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="mascot-high-value">${t('settings.mascot.highValue')}</label>
+          <div class="input-prefix"><span>${getLocale() === 'pt-BR' ? 'R$' : '$'}</span><input id="mascot-high-value" type="text" inputmode="numeric" data-money value="${formatCentsForInput(settings.highValueCents, getLocale())}" /></div>
+          <small class="form-hint">${t('settings.mascot.highValueHint')}</small>
+        </div>
+        <p class="mascot-settings__rule">${t('settings.mascot.rule')}</p>
+      </div>
+    </div>
+  `;
+}
+
+function bindMascotSection(container) {
+  const enabled = container.querySelector('#mascot-enabled');
+  if (!enabled) return;
+  enabled.addEventListener('change', () => {
+    // Ligar sem visual escolhido abre a apresentação de Ledi.
+    if (enabled.checked && !getMascotSettings().gender) {
+      openGenderChooser();
+      return;
+    }
+    updateMascotSettings({ enabled: enabled.checked });
+    render(container);
+  });
+  for (const button of container.querySelectorAll('[data-mascot-gender]')) {
+    button.addEventListener('click', () => {
+      updateMascotSettings({ gender: button.dataset.mascotGender, enabled: true });
+      render(container);
+    });
+  }
+  container.querySelector('#mascot-high-value').addEventListener('change', (event) => {
+    const cents = parseCurrencyInputToCents(event.target.value);
+    updateMascotSettings({ highValueCents: Math.max(0, cents) });
+  });
+}
+
+// Seu perfil: nome com que a pessoa quer ser chamada (saudação, rodapé do menu e falas de Ledi).
+// Em branco, a interface não mostra nome nenhum.
+function profileSectionHtml(space) {
+  return `
+    <p class="section-title">${iconSvg('users', { size: 16 })} ${t('settings.profile.title')}</p>
+    <form class="mascot-settings settings-profile" id="settings-profile-form" autocomplete="off">
+      <div class="form-field">
+        <label for="settings-owner-name">${t('settings.profile.nameLabel')}</label>
+        <div class="settings-profile__row">
+          <input id="settings-owner-name" name="ownerName" type="text" maxlength="60" placeholder="${escapeHtml(t('settings.profile.namePlaceholder'))}" value="${escapeHtml(space?.ownerName || '')}" />
+          <button type="submit" class="button button--primary">${t('settings.profile.save')}</button>
+        </div>
+        <small class="form-hint">${t('settings.profile.nameHint')}</small>
+      </div>
+    </form>
+  `;
+}
+
+function bindProfileSection(container) {
+  const form = container.querySelector('#settings-profile-form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = form.querySelector('#settings-owner-name').value.trim();
+    await updateOwnerName(name);
+    mascotMessage(name ? t('settings.profile.savedWithName', { name }) : t('settings.profile.cleared'), 'success');
+    // Atualiza saudação e rodapé do menu.
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+}
+
+// Aparência: tema claro, escuro ou automático (segue o sistema operacional).
+function appearanceSectionHtml() {
+  const preference = getThemePreference();
+  const options = [
+    ['light', 'sun', t('settings.appearance.light')],
+    ['dark', 'moon', t('settings.appearance.dark')],
+    ['system', 'settings', t('settings.appearance.system')],
+  ];
+  return `
+    <p class="section-title">${iconSvg('sun', { size: 16 })} ${t('settings.appearance.title')}</p>
+    <div class="mascot-settings">
+      <div class="lm-segment settings-theme" role="radiogroup" aria-label="${t('settings.appearance.title')}">
+        ${options
+          .map(
+            ([value, icon, label]) =>
+              `<button type="button" role="radio" aria-checked="${preference === value}" class="${preference === value ? 'is-on' : ''}" data-theme-option="${value}">${iconSvg(icon, { size: 14 })} ${label}</button>`
+          )
+          .join('')}
+      </div>
+      <p class="form-hint" style="margin:10px 0 0">${t('settings.appearance.hint')}</p>
+    </div>
+  `;
+}
+
+function bindAppearanceSection(container) {
+  for (const button of container.querySelectorAll('[data-theme-option]')) {
+    button.addEventListener('click', () => {
+      setThemePreference(button.dataset.themeOption);
+      render(container);
+    });
+  }
+}
+
+export async function render(container) {
+  const space = await getActiveSpace();
   container.innerHTML = `
     <section class="view">
       <div class="view__header"><h1>${t('modules.settings.title')}</h1></div>
+
+      ${profileSectionHtml(space)}
+
+      ${appearanceSectionHtml()}
+
+      ${mascotSectionHtml()}
 
       <p class="section-title">${iconSvg('folder', { size: 16 })} ${t('settings.data.title')}</p>
       <p class="form-hint" style="margin-bottom:12px">${t('settings.data.localNote')}</p>
@@ -32,6 +168,9 @@ export function render(container) {
     </section>
   `;
 
+  bindProfileSection(container);
+  bindAppearanceSection(container);
+  bindMascotSection(container);
   container.querySelector('#settings-backup').addEventListener('click', downloadBackup);
   container.querySelector('#settings-restore-file').addEventListener('change', (event) => {
     const file = event.target.files?.[0];
@@ -42,14 +181,21 @@ export function render(container) {
     confirmDestructive(container, {
       title: t('settings.deleteMovements.title'),
       message: t('settings.deleteMovements.confirm'),
-      run: deleteMovements,
+      run: async () => {
+        await deleteMovements();
+        mascotReactAfterReload('dataDeleted');
+      },
     })
   );
   container.querySelector('#settings-delete-all').addEventListener('click', () =>
     confirmDestructive(container, {
       title: t('settings.deleteAll.title'),
       message: t('settings.deleteAll.confirm'),
-      run: deleteAllData,
+      // Ajustes de Ledi são preferências (como tema e idioma) e não são apagados.
+      run: async () => {
+        await deleteAllData();
+        mascotReactAfterReload('dataDeleted');
+      },
     })
   );
 }
@@ -78,6 +224,7 @@ async function downloadBackup() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  mascotReact('backupDone');
 }
 
 function reloadToStart() {
@@ -154,6 +301,8 @@ async function startRestore(container, file) {
   const result = validateBackup(parsed);
 
   if (!result.ok) {
+    // Com Ledi ligada, o erro vira fala dela; senão, abre a janela com a mensagem.
+    if (mascotMessage(t(`settings.restore.error.${result.reason}`), 'error')) return;
     openModal(slot, {
       title: t('settings.restore.title'),
       size: 'sm',
@@ -193,6 +342,7 @@ async function startRestore(container, file) {
     restoreButton.disabled = true;
     try {
       await restoreBackup(result.stores);
+      mascotReactAfterReload('dataRestored');
       reloadToStart();
     } catch (error) {
       const errorElement = modal.querySelector('#restore-error');

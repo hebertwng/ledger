@@ -1,6 +1,8 @@
 import { getAllRecords, getAllByIndex, putRecord } from './database.js';
 import { getCurrentUser } from './auth.js';
 import { t } from './i18n.js';
+import ptBR from '../locales/pt-BR.js';
+import enUS from '../locales/en-US.js';
 import { createId } from '../utils/ids.js';
 import { nowISOTimestamp } from '../utils/dates.js';
 
@@ -113,6 +115,35 @@ export async function applyDefaultCategoryIcons(spaceId) {
 
 // Etapa 2: há sempre um único espaço ativo. A troca entre múltiplos espaços (seção 3)
 // chega junto do compartilhamento, na Etapa 7.
+// Nome que a pessoa informou para o espaço, ou '' se ainda é o nome padrão criado no primeiro
+// acesso ("Pessoal"/"Personal") — nesse caso a interface não exibe nome nenhum.
+const DEFAULT_SPACE_NAMES = new Set([ptBR['bootstrap.defaultSpaceName'], enUS['bootstrap.defaultSpaceName']].map((name) => name.toLowerCase()));
+
+export function spaceDisplayName(space) {
+  const ownerName = (space?.ownerName || '').trim();
+  if (ownerName) return ownerName;
+  const name = (space?.name || '').trim();
+  return name && !DEFAULT_SPACE_NAMES.has(name.toLowerCase()) ? name : '';
+}
+
+// Nome com que a pessoa se identificou (Configurações → Seu perfil). Fica no próprio espaço, então
+// entra na cópia de segurança. Quando houver login com Google, este campo pode ser preenchido com o
+// nome da conta Google (a pessoa continua podendo trocá-lo aqui).
+export async function updateOwnerName(name) {
+  const space = await getActiveSpace();
+  if (!space) return null;
+  const user = getCurrentUser();
+  const updated = {
+    ...space,
+    ownerName: String(name || '').trim().slice(0, 60),
+    updatedAt: nowISOTimestamp(),
+    updatedBy: user.uid,
+    version: (space.version || 1) + 1,
+  };
+  await putRecord('spaces', updated);
+  return updated;
+}
+
 export async function getActiveSpace() {
   const spaces = await getAllRecords('spaces');
   return spaces.find((space) => !space.deletedAt) || null;

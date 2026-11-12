@@ -318,6 +318,14 @@ body,
   }
 }
 
+/* Janela redesenhada enquanto já está aberta (js/utils/ui.js → openModal): sem animação de
+   entrada, para não piscar ao trocar o tipo do lançamento, abrir a repetição etc. */
+.modal-overlay.is-refresh,
+.modal-overlay.is-refresh .modal,
+.modal-overlay.is-refresh .modal-dialog {
+  animation: none !important;
+}
+
 @keyframes sheet-in {
   from { transform: translateY(100%); }
   to { transform: none; }

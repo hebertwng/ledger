@@ -29,9 +29,10 @@ import { getAllByIndex } from '../../core/database.js';
 import { isRequired, isValidISODate } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
 import { iconSvg } from '../../utils/icons.js';
-import { categoryIconHtml, institutionIconHtml, colorFromText as colorFromTextBase, openModal } from '../../utils/ui.js';
+import { categoryIconHtml, institutionIconHtml, colorFromText as colorFromTextBase, openModal, confirmDialog } from '../../utils/ui.js';
 import { mountCategoryCombo, buildCategoryOptions } from '../../utils/categoryCombo.js';
 import { navigateTo } from '../../core/router.js';
+import { mascotReact } from '../../core/mascot.js';
 
 const SETTLED_STATUSES_SET = new Set(['paid', 'received']);
 const MAX_INSTALLMENTS = 60;
@@ -428,7 +429,7 @@ function updateResultsSlot(context) {
   }
   for (const button of slot.querySelectorAll('[data-end-series]')) {
     button.addEventListener('click', async () => {
-      if (!window.confirm(t('transactions.endSeriesConfirm'))) return;
+      if (!(await confirmDialog(t('transactions.endSeriesConfirm'), { danger: false, confirmLabel: t('transactions.action.endSeries') }))) return;
       await endRecurringSeries(button.dataset.endSeries, todayISODate());
       render(context.container);
     });
@@ -566,15 +567,20 @@ function listHtml(transactions, context) {
 async function toggleQuickPay(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
   if (!transaction || transaction.status === 'cancelled') return;
+  let mascotEvent;
   if (SETTLED_STATUSES_SET.has(transaction.status)) {
     await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: 'pending' }, { scope: 'only', includePaid: true });
+    mascotEvent = 'transactionUnpaid';
   } else {
     const nextStatus = transaction.kind === 'income' ? 'received' : 'paid';
     await updateTransactionScoped(context.activeSpace.id, transaction.id, { status: nextStatus }, { scope: 'only', includePaid: false });
+    mascotEvent = transaction.kind === 'income' ? 'transactionReceived' : 'transactionPaid';
   }
   justToggledId = transaction.id;
   await render(context.container);
   justToggledId = null;
+  // Ledi: pagar → comemora (todas pagas no mês → festa maior); receber → dinheiro entrando.
+  mascotReact(mascotEvent, { date: transaction.date });
 }
 
 function editDraft(transaction) {
@@ -605,7 +611,7 @@ function startEdit(context, transactionId) {
   renderForm(context);
 }
 
-function startDelete(context, transactionId) {
+async function startDelete(context, transactionId) {
   const transaction = context.transactions.find((item) => item.id === transactionId);
   if (!transaction) return;
   if (transaction.seriesId) {
@@ -614,7 +620,7 @@ function startDelete(context, transactionId) {
     return;
   }
   const isSettled = SETTLED_STATUSES_SET.has(transaction.status);
-  if (!window.confirm(isSettled ? t('transactions.confirmDeletePaid') : t('transactions.deleteConfirm'))) return;
+  if (!(await confirmDialog(isSettled ? t('transactions.confirmDeletePaid') : t('transactions.deleteConfirm')))) return;
   formState = null;
   deleteTransactionScoped(context.activeSpace.id, transaction.id, { scope: 'only', includePaid: true }).then(() => render(context.container));
 }
@@ -690,7 +696,7 @@ function targetOptionsHtml(context, draft, isEdit, transaction) {
 function installmentPreviewHtml(draft) {
   const total = Number(draft.installmentsTotal);
   const amountCents = parseCurrencyInputToCents(draft.amount);
-  if (!Number.isInteger(total) || total < 2 || total > MAX_INSTALLMENTS || amountCents <= 0) {
+  if (!Number.isInteger(total) || total < 2 || total > MAX_INSTALLMENTS || amountCents < 0) {
     return t('transactions.form.installmentPreviewEmpty');
   }
   const amounts = buildInstallmentAmounts(amountCents, total);
@@ -960,7 +966,8 @@ function renderForm(context) {
 
     if (!isRequired(description)) return showError(t('transactions.validation.descriptionRequired'));
     if (!isSeriesEdit) {
-      if (amountCents <= 0) return showError(t('transactions.validation.amountInvalid'));
+      // Valor zerado é permitido (ex.: lançamento a definir ou cortesia); só negativo é inválido.
+      if (amountCents < 0) return showError(t('transactions.validation.amountInvalid'));
       if (!isValidISODate(date)) return showError(t('transactions.validation.dateInvalid'));
     }
     if (!accountId && !creditCardId) return showError(t('transactions.validation.accountRequired'));
@@ -973,7 +980,7 @@ function renderForm(context) {
       const changes = { description, categoryId, status };
       if (!transaction.creditCardId) changes.accountId = accountId;
       if (!transaction.seriesId) {
-        changes.amountCents = kind === 'expense' ? -amountCents : amountCents;
+        changes.amountCents = kind === 'expense' && amountCents !== 0 ? -amountCents : amountCents;
         changes.date = date;
       }
       const result = await updateTransactionScoped(context.activeSpace.id, transaction.id, changes, {
@@ -989,18 +996,27 @@ function renderForm(context) {
     const status = draft.settled ? settledStatus : 'pending';
     const common = { kind, description, date, categoryId, accountId, creditCardId, status };
 
-    if (draft.repeatOpen && draft.repeatType === 'installment') {
-      const installmentsTotal = Number(draft.installmentsTotal);
-      if (!Number.isInteger(installmentsTotal) || installmentsTotal < 2 || installmentsTotal > MAX_INSTALLMENTS) {
-        return showError(t('transactions.validation.installmentsInvalid'));
+    try {
+      if (draft.repeatOpen && draft.repeatType === 'installment') {
+        const installmentsTotal = Number(draft.installmentsTotal);
+        if (!Number.isInteger(installmentsTotal) || installmentsTotal < 2 || installmentsTotal > MAX_INSTALLMENTS) {
+          return showError(t('transactions.validation.installmentsInvalid'));
+        }
+        await createInstallmentSeries(context.activeSpace.id, { ...common, totalAmountCents: amountCents, installmentsTotal });
+      } else if (draft.repeatOpen && draft.repeatType === 'recurring') {
+        if (draft.endDate && (!isValidISODate(draft.endDate) || draft.endDate < date)) return showError(t('transactions.validation.endDateInvalid'));
+        await createRecurringSeries(context.activeSpace.id, { ...common, amountCents, frequency: draft.frequency, endDate: draft.endDate || null });
+      } else {
+        await createSimpleTransaction(context.activeSpace.id, { ...common, amountCents });
       }
-      await createInstallmentSeries(context.activeSpace.id, { ...common, totalAmountCents: amountCents, installmentsTotal });
-    } else if (draft.repeatOpen && draft.repeatType === 'recurring') {
-      if (draft.endDate && (!isValidISODate(draft.endDate) || draft.endDate < date)) return showError(t('transactions.validation.endDateInvalid'));
-      await createRecurringSeries(context.activeSpace.id, { ...common, amountCents, frequency: draft.frequency, endDate: draft.endDate || null });
-    } else {
-      await createSimpleTransaction(context.activeSpace.id, { ...common, amountCents });
+    } catch (error) {
+      showError(t('settings.failed', { message: error.message }));
+      mascotReact('error');
+      return;
     }
+    // Ledi reage: receita → dinheiro entrando; despesa → aprova, leva as mãos à cabeça com valor
+    // alto ou mostra os bolsos vazios se estourou o limite de gastos da categoria.
+    mascotReact(kind === 'income' ? 'incomeCreated' : 'expenseCreated', { amountCents, categoryId, date });
 
     // "Salvar e criar outro": mantém tipo, data e conta para agilizar uma sequência de lançamentos.
     formState = createAnother ? { mode: 'create', draft: { ...newDraft(kind), date, target: draft.target } } : null;

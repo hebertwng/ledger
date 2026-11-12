@@ -1,14 +1,17 @@
 import { openDatabase, getAllByIndex } from './core/database.js';
-import { ensureDefaultSpace, getActiveSpace, applyDefaultCategoryIcons } from './core/bootstrap.js';
+import { ensureDefaultSpace, getActiveSpace, applyDefaultCategoryIcons, spaceDisplayName } from './core/bootstrap.js';
 import { registerRoute, initRouter } from './core/router.js';
 import { t, getLocale, setLocale, onLocaleChange, SUPPORTED_LOCALES } from './core/i18n.js';
 import { initTheme } from './core/theme.js';
 import { hydrateIcons } from './utils/icons.js';
 import { attachMoneyMask } from './utils/moneyInput.js';
+import { autoEnhanceSelects } from './utils/selectEnhancer.js';
+import { autoEnhanceDatePickers } from './utils/datePicker.js';
 import { ensureOccurrencesThrough } from './services/transactionRepository.js';
 import { todayISODate } from './utils/dates.js';
 import { endOfMonth } from './utils/recurrence.js';
 import { getAppState, onAppStateChange, getConnectivity, onConnectivityChange } from './core/app-state.js';
+import { initMascot, refreshMascotTexts } from './core/mascot.js';
 
 import * as dashboardModule from './modules/dashboard/index.js';
 import * as accountsModule from './modules/accounts/index.js';
@@ -20,6 +23,7 @@ import * as budgetsModule from './modules/budgets/index.js';
 import * as transfersModule from './modules/transfers/index.js';
 import * as reportsModule from './modules/reports/index.js';
 import * as settingsModule from './modules/settings/index.js';
+import * as investmentsModule from './modules/investments/index.js';
 
 const LOCALE_OPTION_LABEL_KEYS = { 'pt-BR': 'language.ptBR', 'en-US': 'language.enUS' };
 const SIDEBAR_KEY = 'ledger.sidebarCollapsed';
@@ -72,8 +76,13 @@ async function refreshSidebarSummary() {
   if (!space) return;
   const nameElement = document.getElementById('sidebar-space-name');
   const avatar = document.getElementById('sidebar-avatar');
-  if (nameElement) nameElement.textContent = space.name;
-  if (avatar) avatar.textContent = (space.name || 'L').trim().charAt(0).toUpperCase();
+  // Sem nome informado (ainda o padrão "Pessoal"), o rodapé não mostra nome: só o modo e a conexão.
+  const displayName = spaceDisplayName(space);
+  if (nameElement) {
+    nameElement.textContent = displayName;
+    nameElement.hidden = !displayName;
+  }
+  if (avatar) avatar.textContent = (displayName || 'LEDGER').charAt(0).toUpperCase();
 
   const [accounts, cards] = await Promise.all([getAllByIndex('accounts', 'bySpace', space.id), getAllByIndex('creditCards', 'bySpace', space.id)]);
   const count = (items) => items.filter((item) => !item.deletedAt && !item.archived).length;
@@ -85,16 +94,18 @@ async function refreshSidebarSummary() {
   }
 }
 
-// Campos de data: além de aceitar digitação, abrem o calendário ao clicar.
+// Campos de data (dia e mês): continuam digitáveis e, ao clicar, abrem o calendário próprio no
+// estilo dos seletores (js/utils/datePicker.js) em vez do calendário nativo do navegador.
 function setupDatePickers() {
-  document.addEventListener('click', (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.type !== 'date' || input.disabled || input.readOnly) return;
-    try {
-      input.showPicker?.();
-    } catch {
-      // Alguns navegadores só permitem abrir o calendário em certas condições; segue digitável.
-    }
+  autoEnhanceDatePickers({
+    locale: getLocale,
+    texts: () => ({
+      today: t('datepicker.today'),
+      thisMonth: t('datepicker.thisMonth'),
+      clear: t('datepicker.clear'),
+      previous: t('datepicker.previous'),
+      next: t('datepicker.next'),
+    }),
   });
 }
 
@@ -137,6 +148,7 @@ async function bootstrapApp() {
   registerRoute('/transfers', transfersModule.render);
   registerRoute('/reports', reportsModule.render);
   registerRoute('/settings', settingsModule.render);
+  registerRoute('/investments', investmentsModule.render);
 
   initRouter({
     outlet: document.getElementById('app-main'),
@@ -147,6 +159,9 @@ async function bootstrapApp() {
   window.addEventListener('hashchange', () => {
     refreshSidebarSummary().catch(() => {});
   });
+
+  // Ledi: personagem animado no menu lateral; no primeiro acesso se apresenta e pede a escolha do visual.
+  await initMascot();
 }
 
 initTheme();
@@ -155,6 +170,8 @@ renderStaticText();
 setupLanguageSwitcher();
 setupSidebarCollapse();
 setupDatePickers();
+// Todo <select> ganha o mesmo visual do seletor de categorias (sem busca).
+autoEnhanceSelects();
 attachMoneyMask(document, getLocale);
 renderStateBadges();
 
@@ -162,6 +179,7 @@ onLocaleChange(() => {
   renderStaticText();
   setupLanguageSwitcher();
   renderStateBadges();
+  refreshMascotTexts();
   refreshCurrentRoute();
 });
 onAppStateChange(renderStateBadges);

@@ -1,0 +1,655 @@
+/* Ledi, o personagem animado (js/core/mascot.js). As animações do desenho vêm do CSS do gerador,
+   injetado com o prefixo .lm; aqui ficam o palco no menu lateral, o balão de fala, o painel de
+   saúde financeira, a escolha do visual no primeiro acesso e o confete. Ledi aparece só no menu
+   lateral, ocupando o espaço livre abaixo dos itens. */
+
+.lm svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- Palco no menu lateral ---------- */
+.sidebar.has-mascot .sidebar__body {
+  flex: 0 1 auto;
+}
+
+.sidebar__mascot {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 170px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 10px 16px 14px;
+}
+
+.sidebar__mascot[hidden] {
+  display: none;
+}
+
+.sidebar__mascot-stage {
+  position: relative;
+  height: 100%;
+  max-height: 300px;
+  aspect-ratio: 200 / 240;
+  max-width: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  transition: transform 0.25s var(--ease-spring);
+}
+
+.sidebar__mascot-stage:hover {
+  transform: translateY(-2px);
+}
+
+.sidebar__mascot-stage:focus-visible {
+  outline: 3px solid #8fa8ff;
+  outline-offset: 3px;
+}
+
+.lm-stage__art {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: #141e36;
+  box-shadow: 0 0 0 1px var(--sidebar-border), 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- Balão de fala ----------
+   Preso ao <body> e posicionado por js/core/mascot.js (positionBubble): sempre à direita do menu,
+   na altura do rosto de Ledi — nunca cobre a imagem dele nem os itens do menu — e acima das janelas
+   (modais), para que mensagens de formulário também apareçam como fala dele. */
+.lm-bubble {
+  --lm-bubble-bg: #ffffff;
+  position: fixed;
+  z-index: 1150;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 100px));
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--lm-bubble-bg);
+  color: #1b1b33;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  box-shadow: 0 10px 28px rgba(12, 17, 36, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-6px) scale(0.94);
+  transform-origin: left center;
+  transition: opacity 0.2s var(--ease-out), transform 0.3s var(--ease-spring), visibility 0s linear 0.3s;
+  cursor: pointer;
+}
+
+/* Seta à esquerda, apontando para Ledi. */
+.lm-bubble::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: var(--lm-arrow-y, 50%);
+  width: 14px;
+  height: 14px;
+  background: inherit;
+  border-radius: 3px;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.lm-bubble.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.2s var(--ease-out), transform 0.3s var(--ease-spring), visibility 0s;
+}
+
+.lm-bubble[hidden] {
+  display: none;
+}
+
+.lm-bubble--alert { --lm-bubble-bg: #ffe3e0; color: #9b2318; }
+.lm-bubble--warn { --lm-bubble-bg: #fff0d9; color: #7a4a00; }
+.lm-bubble--party { --lm-bubble-bg: #fff6cc; color: #6b5200; }
+.lm-bubble--money { --lm-bubble-bg: #ddf7e6; color: #11612f; }
+
+/* Com o painel de saúde financeira aberto, a fala dá lugar a ele. */
+:root:has(.sidebar__mascot.is-card-open) .lm-bubble {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Mensagens que Ledi já falou somem da tela (só enquanto ela está ligada). */
+.is-spoken {
+  display: none !important;
+}
+
+/* ---------- Menu recolhido / telas estreitas: só o rosto, ainda animado ---------- */
+/* O recorte mostra a cabeça (região 48,46 – 152,150 do desenho de 200×240). */
+.sidebar-collapsed .sidebar.has-mascot .sidebar__body {
+  flex: 1 1 auto;
+}
+
+.sidebar-collapsed .sidebar__mascot {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 10px 0;
+  --lm-face: 48px;
+}
+
+.sidebar-collapsed .sidebar__mascot-stage {
+  width: var(--lm-face);
+  height: var(--lm-face);
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 50%;
+}
+
+.sidebar-collapsed .lm-stage__art {
+  border-radius: 50%;
+}
+
+.sidebar-collapsed .lm-stage__art svg {
+  width: calc(var(--lm-face) * 200 / 104);
+  height: calc(var(--lm-face) * 240 / 104);
+  margin-left: calc(var(--lm-face) * -48 / 104);
+  margin-top: calc(var(--lm-face) * -46 / 104);
+}
+
+@media (max-width: 1024px) {
+  .sidebar.has-mascot .sidebar__body {
+    flex: 1 1 auto;
+  }
+
+  .sidebar__mascot {
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 10px 0;
+    --lm-face: 48px;
+  }
+
+  .sidebar__mascot-stage {
+    width: var(--lm-face);
+    height: var(--lm-face);
+    max-height: none;
+    aspect-ratio: auto;
+    border-radius: 50%;
+  }
+
+  .lm-stage__art {
+    border-radius: 50%;
+  }
+
+  .lm-stage__art svg {
+    width: calc(var(--lm-face) * 200 / 104);
+    height: calc(var(--lm-face) * 240 / 104);
+    margin-left: calc(var(--lm-face) * -48 / 104);
+    margin-top: calc(var(--lm-face) * -46 / 104);
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar__mascot {
+    --lm-face: 40px;
+  }
+
+  .lm-bubble {
+    max-width: calc(100vw - 80px);
+  }
+}
+
+/* ---------- Painel de saúde financeira (abre ao lado do menu) ---------- */
+.mascot-card {
+  position: absolute;
+  z-index: 50;
+  left: calc(100% + 12px);
+  bottom: 14px;
+  width: min(320px, calc(100vw - 100px));
+  padding: 18px 18px 14px;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-pop);
+  animation: lm-card-in 0.3s var(--ease-spring);
+  transform-origin: bottom left;
+}
+
+.mascot-card[hidden] {
+  display: none;
+}
+
+@keyframes lm-card-in {
+  from { opacity: 0; transform: translateX(-10px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.lm-health {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lm-health__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lm-health__head small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lm-level {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.lm-level--1 { color: #d64545; }
+.lm-level--2 { color: #c27c0e; }
+.lm-level--3 { color: var(--color-primary); }
+.lm-level--4 { color: #12917a; }
+.lm-level--5 { color: #b8860b; }
+
+.lm-meter {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.lm-meter__step {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-soft);
+  transition: background 0.4s var(--ease-out);
+}
+
+.lm-meter__step.is-on.lm-meter__step--1 { background: #e5484d; }
+.lm-meter__step.is-on.lm-meter__step--2 { background: #f0a020; }
+.lm-meter__step.is-on.lm-meter__step--3 { background: #2d5bff; }
+.lm-meter__step.is-on.lm-meter__step--4 { background: #12b39a; }
+.lm-meter__step.is-on.lm-meter__step--5 { background: linear-gradient(90deg, #f1c40f, #ffdf6b); }
+
+.lm-reasons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-soft);
+}
+
+.lm-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lm-reason .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.lm-reason--good .icon { color: var(--color-success); }
+.lm-reason--bad .icon { color: var(--color-danger); }
+.lm-reason--neutral .icon { color: var(--color-text-muted); }
+
+.lm-health__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lm-score {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-text-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  cursor: help;
+}
+
+.lm-factors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lm-factor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lm-factor__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lm-factor__points {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-soft);
+}
+
+.lm-factor__bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-soft);
+  overflow: hidden;
+}
+
+.lm-factor__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.5s var(--ease-out);
+}
+
+.lm-factor--good .lm-factor__bar i { background: var(--color-success); }
+.lm-factor--neutral .lm-factor__bar i { background: #f0a020; }
+.lm-factor--bad .lm-factor__bar i { background: var(--color-danger); }
+
+.lm-factor small {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.lm-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.lm-tip .icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-primary);
+}
+
+.lm-health__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.lm-segment {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-soft);
+}
+
+.lm-segment button {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.lm-segment button.is-on {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-card);
+}
+
+.lm-link {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.lm-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Configurações ---------- */
+.mascot-settings {
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  margin-bottom: 24px;
+}
+
+.mascot-settings__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mascot-settings__fields .form-field {
+  margin: 0;
+  max-width: 320px;
+}
+
+.mascot-settings__rule {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-soft);
+  line-height: 1.5;
+}
+
+/* ---------- Primeiro acesso: escolha do visual de Ledi ---------- */
+.lm-chooser {
+  z-index: 1100;
+}
+
+.lm-chooser__box {
+  text-align: center;
+}
+
+.lm-chooser__title {
+  margin: 4px 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.lm-chooser__text {
+  margin: 0 auto 20px;
+  max-width: 460px;
+  color: var(--color-text-soft);
+  line-height: 1.5;
+}
+
+.lm-chooser__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+  justify-content: center;
+  gap: 16px;
+}
+
+.lm-chooser__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 10px 14px;
+  border: 2px solid var(--color-border-soft);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.25s var(--ease-spring), box-shadow 0.2s;
+}
+
+.lm-chooser__option:hover,
+.lm-chooser__option:focus-visible {
+  border-color: var(--color-primary);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+  outline: none;
+}
+
+.lm-chooser__art {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.lm-chooser__art svg {
+  height: auto;
+}
+
+.lm-chooser__option strong {
+  font-size: 16px;
+}
+
+.lm-chooser__option small {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.lm-chooser__note {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ---------- Confete ---------- */
+.lm-confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lm-confetti-layer i {
+  position: absolute;
+  top: -14px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation: lm-fall var(--t, 2s) cubic-bezier(0.25, 0.6, 0.5, 1) forwards;
+}
+
+@keyframes lm-fall {
+  to { transform: translate(var(--dx), 105vh) rotate(var(--rot)); opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lm-bubble,
+  .sidebar__mascot-stage,
+  .mascot-card {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ---------- Seu perfil (Configurações) ---------- */
+.settings-profile .form-field {
+  margin: 0;
+  max-width: 460px;
+}
+
+.settings-profile__row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-profile__row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Aparência (Configurações) ---------- */
+.settings-theme button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+/* Primeiro acesso: "como prefere ser chamado(a)?" (opcional) */
+.lm-chooser__name {
+  margin: -6px 0 18px;
+}
+
+.lm-chooser__name-link {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.lm-chooser__name-link:hover {
+  color: var(--color-primary-hover);
+}
+
+.lm-chooser__name-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  animation: notice-in 0.25s var(--ease-out);
+}
+
+.lm-chooser__name-field[hidden] {
+  display: none;
+}
+
+.lm-chooser__name-field label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--color-text-soft);
+}
+
+.lm-chooser__name-field input {
+  width: min(280px, 100%);
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: center;
+  outline: none;
+}
+
+.lm-chooser__name-field input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}

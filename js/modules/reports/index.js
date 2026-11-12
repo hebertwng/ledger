@@ -12,10 +12,15 @@ import { escapeHtml } from '../../utils/html.js';
 import { iconSvg } from '../../utils/icons.js';
 import { categoryIconHtml, institutionIconHtml, colorFromText } from '../../utils/ui.js';
 import { downloadCsv } from '../../utils/csv.js';
+import { mascotMessage } from '../../core/mascot.js';
+import { renderInvestmentsReport } from '../investments/index.js';
+
+// Expandido a partir de um clique no gráfico: rola a listagem até a categoria aberta.
+let scrollToExpanded = false;
 
 // Relatórios em abas, todos sobre o mês escolhido no topo (e, quando faz sentido, os 12 meses
 // até ele). Filtro de origem (conta ou cartão) vale para todas as abas.
-const TABS = ['categories', 'cashflow', 'sources', 'history'];
+const TABS = ['categories', 'cashflow', 'sources', 'history', 'investments'];
 let state = { tab: 'categories', month: todayISODate().slice(0, 7), kind: 'expense', chart: 'donut', origin: '', includePending: true, expanded: null };
 const charts = {};
 
@@ -130,6 +135,8 @@ export async function render(container) {
   if (state.tab === 'categories') renderCategoriesTab(body, context);
   else if (state.tab === 'cashflow') renderCashflowTab(body, context);
   else if (state.tab === 'sources') renderSourcesTab(body, context);
+  // Investimentos: evolução por período (à parte do mês escolhido no topo e dos lançamentos).
+  else if (state.tab === 'investments') renderInvestmentsReport(body);
   else renderHistoryTab(body, context);
 }
 
@@ -212,22 +219,56 @@ function renderCategoriesTab(body, context) {
     downloadCsv(`${state.kind === 'expense' ? 'despesas' : 'receitas'}-por-categoria-${state.month}.csv`, [t('reports.column.category'), t('reports.column.total')], detailed.map((bucket) => [bucket.name || t('transactions.form.categoryNone'), (bucket.totalCents / 100).toFixed(2)]));
   });
 
+  // Depois de expandir pelo gráfico, traz a linha aberta para a vista.
+  if (scrollToExpanded && state.expanded) {
+    body.querySelector(`[data-expand="${CSS.escape(state.expanded)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  scrollToExpanded = false;
+
   if (!buckets.length) return;
   const labels = buckets.map((bucket) => bucket.name || t('transactions.form.categoryNone'));
   const values = buckets.map((bucket) => bucket.totalCents / 100);
   const colors = buckets.map(colorOf);
   const money = (value) => centsToDisplay(Math.round(value * 100), locale);
+
+  // Clique numa fatia/barra: se a categoria tem subcategorias com valores, expande (ou recolhe)
+  // a listagem delas ao lado; sem subcategorias, Ledi avisa.
+  const hasSubcategories = (bucket) =>
+    Boolean(bucket.categoryId) &&
+    context.periodTransactions.some((transaction) => transaction.kind === state.kind && categoriesById.get(transaction.categoryId)?.parentId === bucket.categoryId);
+  const interaction = {
+    onClick: (_event, elements) => {
+      const bucket = elements?.length ? buckets[elements[0].index] : null;
+      if (!bucket) return;
+      if (!hasSubcategories(bucket)) {
+        mascotMessage(t('reports.noSubcategories', { category: bucket.name || t('transactions.form.categoryNone') }), 'info');
+        return;
+      }
+      const key = bucket.categoryId;
+      state.expanded = state.expanded === key ? null : key;
+      scrollToExpanded = true;
+      render(context.container);
+    },
+    onHover: (event, elements) => {
+      const target = event.native?.target;
+      if (target) target.style.cursor = elements?.length ? 'pointer' : 'default';
+    },
+  };
+  // A fatia da categoria expandida fica destacada (afastada do centro).
+  const offsets = buckets.map((bucket) => ((bucket.categoryId || 'none') === state.expanded ? 14 : 0));
+
   if (state.chart === 'donut') {
     drawChart('rp-categories-chart', {
       type: 'doughnut',
-      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: cssVar('--color-surface') }] },
-      options: { cutout: '70%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ` ${item.label}: ${money(item.raw)}` } } } },
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: cssVar('--color-surface'), offset: offsets, hoverOffset: 8 }] },
+      options: { ...interaction, layout: { padding: 12 }, cutout: '70%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ` ${item.label}: ${money(item.raw)}` } } } },
     });
   } else {
     drawChart('rp-categories-chart', {
       type: 'bar',
       data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 8, maxBarThickness: 26 }] },
       options: {
+        ...interaction,
         indexAxis: 'y',
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ` ${money(item.raw)}` } } },
         scales: { x: { ticks: { callback: (value) => money(value) } }, y: { grid: { display: false } } },

@@ -18,6 +18,33 @@ export function setTheme(theme) {
   window.dispatchEvent(new CustomEvent('ledger:themechange', { detail: theme }));
 }
 
+// Preferência escolhida em Configurações → Aparência: 'light', 'dark' ou 'system' (sem escolha
+// salva, segue o sistema operacional).
+export function getThemePreference() {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+  } catch {
+    // Sem localStorage: trata como "sistema".
+  }
+  return 'system';
+}
+
+export function setThemePreference(preference) {
+  if (preference === 'dark' || preference === 'light') {
+    setTheme(preference);
+    return;
+  }
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignora.
+  }
+  const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', systemTheme);
+  window.dispatchEvent(new CustomEvent('ledger:themechange', { detail: systemTheme }));
+}
+
 // Sem preferência salva, acompanha o sistema.
 export function initTheme() {
   if (!document.documentElement.hasAttribute('data-theme')) {

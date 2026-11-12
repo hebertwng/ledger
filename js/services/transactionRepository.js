@@ -14,7 +14,9 @@ function isPaid(transaction) {
 }
 
 function signedAmount(kind, amountCents) {
-  return kind === 'expense' ? -Math.abs(amountCents) : Math.abs(amountCents);
+  // Valor zerado é permitido; evita gravar "-0" (que apareceria como -R$ 0,00).
+  const absolute = Math.abs(amountCents) || 0;
+  return kind === 'expense' && absolute !== 0 ? -absolute : absolute;
 }
 
 function baseTransactionFields({ spaceId, userId, timestamp }) {

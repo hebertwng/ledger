@@ -54,13 +54,67 @@ Configurações indica em qual etapa chega.
   que crescem, valores da Visão geral que contam até o total, botões que reagem ao toque, joinha
   que "pula" ao marcar pago, janelas que abrem e fecham com efeito de mola (no celular sobem da
   base) e troca gradual de tema. Tudo é desligado quando o sistema pede movimento reduzido.
-- **Modo escuro**: chave na Visão geral; sem escolha salva, segue o sistema operacional. Todas as
+- **Modo escuro**: em Configurações → Aparência (Claro, Escuro ou Automático, que segue o sistema operacional). Todas as
   cores são variáveis CSS em `css/main.css` (`--color-primary` define a cor de destaque).
 - **Responsivo**: no celular, os formulários abrem como painel de tela cheia e as listas ficam
   enxutas (ícone, descrição, valor e situação).
 - **Ações de linha** (editar, excluir, arquivar, pausar/retomar série…) são botões com ícone.
+- **Seletores**: todo `<select>` (idioma, filtros, formulários) ganha automaticamente o mesmo
+  visual do seletor de categorias, sem busca (`js/utils/selectEnhancer.js`; o select original fica
+  escondido e continua sendo a fonte do valor). No seletor de categoria, a busca é digitada no
+  próprio campo ao abrir — ou já digitando com ele focado.
 - **Campos de valor** com máscara monetária: os dígitos entram pela direita (`1` → `0,01`,
-  `150000` → `1.500,00`). **Campos de data** abrem o calendário ao clicar e continuam digitáveis.
+  `150000` → `1.500,00`). **Campos de data** (dia e mês) continuam digitáveis e, ao clicar, abrem um calendário próprio no estilo dos seletores (`js/utils/datePicker.js`; Alt+↓ abre pelo teclado).
+
+### Ledi, o personagem
+
+**Ledi** (nome neutro, com visual masculino ou feminino) acompanha o uso do sistema. O desenho e as
+16 animações vêm do projeto Personagens (`js/vendor/personagem.js`, cópia de
+`Projetos/Personagens/personagem.js`); a integração fica em `js/core/mascot.js` e `css/mascot.css`.
+
+- **Primeiro acesso**: Ledi se apresenta e a pessoa escolhe o visual (pode trocar depois em
+  Configurações ou no painel do próprio Ledi).
+- **Nível = saúde financeira do mês corrente** (`js/services/financialHealth.js`, com testes):
+  pontuação de 0 a 100 somando quatro fatores proporcionais —
+  **sobra do mês** até 40 (de −20% a 30% do que entrou, contando pendentes),
+  **reserva** até 30 (quantos meses de despesa média dos últimos 3 meses o *saldo previsto* cobre;
+  3 meses = máximo), **contas em dia** até 15 (−5 por conta/fatura atrasada) e **limites de gastos**
+  até 15 (dentro = 1, perto = 0,5, estourado = 0; sem limites = 10). Níveis: 0–19 Crítico · 20–39
+  Baixo · 40–59 Equilibrado · 60–79 Confortável · 80+ Excelente (a interface mostra só o nome do estado, sem número). Saldo previsto negativo:
+  Baixo se a dívida for de até 50% das despesas de um mês; acima disso, Crítico.
+  **Tudo pelo previsto**: o nível usa sempre os valores previstos (com lançamentos pendentes) — o
+  saldo confirmado não entra no cálculo. O painel de Ledi mostra a pontuação de cada fator e
+  uma dica sobre o mais fraco. Ao subir, Ledi "sobe de nível" com troca de roupa e confete; ao
+  cair, avisa.
+- **Todas as mensagens são falas de Ledi**: erros de formulário, avisos das telas e `alert()` viram
+  balões de Ledi (capturados automaticamente em `js/core/mascot.js`, sem mexer em cada tela); o
+  texto em linha some enquanto Ledi está ligada. O balão nasce colado à direita da imagem dela, na
+  altura do rosto (nunca a cobre) e aparece por cima até de janelas abertas; clicar dispensa.
+  Confirmações que exigem resposta (excluir, encerrar série) abrem uma **janela de confirmação do
+  próprio app** (`confirmDialog` em `js/utils/ui.js`), no lugar do `confirm()` do navegador — que
+  alguns navegadores, como o embutido do app, bloqueiam. Esc cancela, Enter confirma.
+  **Com Ledi desligada**, as mesmas mensagens viram avisos no padrão do app (`js/utils/notify.js`):
+  sempre no topo da janela do navegador, no mesmo lugar (inclusive erros de formulário, por cima da janela aberta) — verde
+  para confirmação (ex.: "Despesa salva."), amarelo/laranja para alerta e vermelho para erro. Avisos
+  fixos das telas (ex.: "cadastre uma conta antes") ficam no lugar, no estilo de alerta.
+- **Seu nome**: em Configurações → Seu perfil. Sem nome, a interface não mostra nome nenhum (o
+  "Pessoal" padrão fica oculto); com nome, aparece na saudação, no menu e na saudação de Ledi.
+  Quando houver login com Google, o campo `ownerName` do espaço poderá vir de lá.
+- **Sempre atualizado**: toda gravação passa por `js/core/database.js`, que avisa quando os dados
+  mudam (`onDataChange`); Ledi recalcula a cada mudança de saldo, previsto, lançamento, limite ou
+  fatura — inclusive edições, exclusões e alterações de conta.
+- **Reações aos eventos**: despesa → aprovando; despesa a partir do *valor alto* (padrão R$ 1.000,
+  ajustável) → mãos na cabeça; despesa que estoura um limite de gastos → bolsos vazios; receita →
+  dinheiro entrando; transferência para poupança/investimento → cofrinho; marcar pago / pagar fatura
+  → comemora (todas as contas do mês pagas → festa maior); erro → coça a cabeça; lista vazia → dá de
+  ombros; cópia de segurança → cofrinho.
+- **Ao abrir**: acena com a saudação; se há conta vencendo hoje ou atrasada, olha o relógio.
+- **Onde aparece**: só no menu lateral, ocupando o espaço livre abaixo dos itens, com o balão de
+  fala no alto do quadro. Com o menu recolhido (ou em telas estreitas) mostra só o rosto, ainda
+  animado, e o balão sai para a direita do menu. Um clique em Ledi abre, ao lado do menu, o painel
+  de saúde financeira (nível, motivos, dica e troca de visual). Parado, os olhos seguem o cursor;
+  sem interação, fica no celular.
+- Tudo respeita *movimento reduzido* e pode ser desligado em **Configurações → Ledi**.
 
 ### Visão geral
 
@@ -72,6 +126,7 @@ disponível) e **Limite de gastos**.
 
 ### Lançamentos
 
+- Lançamentos podem ter **valor zerado** (só valores negativos são recusados).
 - Barra com o botão **+ Lançamento** (Nova despesa / receita / transferência, também pelos atalhos
   `D`/`R`/`T`), navegação por mês (‹ › ou setas do teclado) e filtros em linha: **Origem** (contas
   e cartões), **Tipo**, **Categorias** (uma categoria principal inclui as subcategorias),
@@ -97,12 +152,35 @@ disponível) e **Limite de gastos**.
   24 de `assets/icons/institutions/`), saldo confirmado/previsto ou limite disponível, e seção de
   arquivados. Cadastros abrem em janela.
 
+### Investimentos
+
+Menu próprio para o dinheiro aplicado em instituições, **à parte dos lançamentos**: investimentos
+ficam em coleções separadas (`investments` e `investmentEntries`, banco versão 3) e **não entram**
+nas receitas/despesas do mês, nos saldos das contas, nos relatórios de lançamentos nem na saúde
+financeira de Ledi. Entram na cópia de segurança e em "Apagar todos os dados"; "Apagar
+movimentações" não os apaga.
+
+- **Carteira**: valor atual, total aplicado, rendimento total (R$ e %) e rendimento do mês; cada
+  investimento com instituição (logo), tipo e ações de **aporte**, **resgate** e **atualizar valor**
+  (o saldo informado pela instituição — a diferença vira rendimento). Gráfico de distribuição.
+  Clicar num investimento abre o histórico de movimentações (com exclusão), editar, arquivar e
+  excluir. Resgate maior que o valor disponível na data é recusado.
+- **Evolução** (também como aba **Investimentos** em Relatórios): período de 6, 12 ou 24 meses,
+  tudo, ou personalizado (de/até); filtro por investimento; indicadores do período (valor no início
+  e no fim, aportes − resgates, rendimento R$ e %); gráfico **valor × total aplicado** e gráfico de
+  **rendimento por mês**; tabela mês a mês exportável em CSV.
+- Rendimento do mês = valor no fim − valor no início − aportes + resgates; o percentual é sobre o
+  que estava aplicado no mês (valor inicial + aportes). Cálculos em
+  `js/services/investmentAnalytics.js` (com testes).
+- Ledi reage: aporte → cofrinho; atualização com ganho → "Rendeu R$ X!"; com perda → pensativa.
+
 ### Relatórios
 
 Navegação por mês, filtro de origem (conta ou cartão) e opção **Considerar não pagas**, em abas:
 
 - **Categorias**: despesas ou receitas em **rosca ou barras**, ranking com valor, % e barra de
-  proporção; cada categoria abre as subcategorias. Exporta CSV.
+  proporção; cada categoria abre as subcategorias — também clicando na fatia/barra do gráfico (a
+  fatia aberta fica destacada; sem subcategorias, Ledi avisa). Exporta CSV.
 - **Entradas × Saídas**: indicadores do mês e de 12 meses, gráfico de barras (receitas e despesas)
   com a linha do **saldo acumulado**, e tabela mês a mês.
 - **Contas e cartões**: gastos do mês por conta e por cartão.

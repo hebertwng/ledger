@@ -8,6 +8,8 @@ import { centsToDisplay, parseCurrencyInputToCents } from '../../utils/currency.
 import { todayISODate, formatDateDisplay } from '../../utils/dates.js';
 import { isValidISODate } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
+import { mascotReact } from '../../core/mascot.js';
+import { confirmDialog } from '../../utils/ui.js';
 
 let formState = null;
 
@@ -49,7 +51,7 @@ export async function render(container) {
 
   for (const button of container.querySelectorAll('[data-delete-id]')) {
     button.addEventListener('click', async () => {
-      if (!window.confirm(t('transfers.deleteConfirm'))) return;
+      if (!(await confirmDialog(t('transfers.deleteConfirm')))) return;
       await deleteTransfer(button.dataset.deleteId);
       render(container);
     });
@@ -170,6 +172,9 @@ function renderForm(container, activeSpace, accounts) {
       await updateTransfer(transfer.id, payload);
     } else {
       await createTransfer(activeSpace.id, payload);
+      // Ledi: para poupança/investimento guarda no cofrinho; entre contas comuns, aprova.
+      const destination = accounts.find((account) => account.id === toAccountId);
+      mascotReact('transferCreated', { toAccountType: destination?.type });
     }
 
     formState = null;

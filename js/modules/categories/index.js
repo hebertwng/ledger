@@ -12,7 +12,7 @@ import {
 import { isRequired } from '../../utils/validation.js';
 import { escapeHtml } from '../../utils/html.js';
 import { iconSvg } from '../../utils/icons.js';
-import { categoryIconHtml, iconPickerHtml, colorPickerHtml, openModal, CATEGORY_COLORS } from '../../utils/ui.js';
+import { categoryIconHtml, iconPickerHtml, colorPickerHtml, openModal, CATEGORY_COLORS, confirmDialog } from '../../utils/ui.js';
 
 // Aba exibida (despesas ou receitas) — o cadastro é sempre do tipo da aba aberta.
 let activeKind = 'expense';
@@ -252,7 +252,7 @@ function renderForm(container, activeSpace, categories) {
 
 async function handleDelete(container, activeSpace, categories, modal) {
   const category = formState.category;
-  if (!window.confirm(t('categories.deleteConfirm'))) return;
+  if (!(await confirmDialog(t('categories.deleteConfirm')))) return;
   const result = await deleteCategory(activeSpace.id, category.id);
   if (result.allowed) {
     formState = null;

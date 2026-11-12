@@ -17,6 +17,8 @@
   <link rel="stylesheet" href="css/brand.css" />
   <link rel="stylesheet" href="css/responsive.css" />
   <link rel="stylesheet" href="css/motion.css" />
+  <link rel="stylesheet" href="css/mascot.css" />
+  <link rel="stylesheet" href="css/investments.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script>
     // Aplica o tema (claro/escuro) e o menu recolhido antes da primeira pintura, sem piscar.
@@ -56,6 +58,7 @@
           <li><a href="#/transactions" data-route="/transactions"><span class="sidebar__icon" data-icon="transactions"></span><span class="sidebar__label" data-i18n="nav.transactions"></span></a></li>
           <li><a href="#/reports" data-route="/reports"><span class="sidebar__icon" data-icon="reports"></span><span class="sidebar__label" data-i18n="nav.reports"></span></a></li>
           <li><a href="#/budgets" data-route="/budgets"><span class="sidebar__icon" data-icon="budgets"></span><span class="sidebar__label" data-i18n="nav.budgets"></span></a></li>
+          <li><a href="#/investments" data-route="/investments"><span class="sidebar__icon" data-icon="trendingUp"></span><span class="sidebar__label" data-i18n="nav.investments"></span></a></li>
           <li><a href="#/transfers" data-route="/transfers"><span class="sidebar__icon" data-icon="transfers"></span><span class="sidebar__label" data-i18n="nav.transfers"></span></a></li>
           <li><a href="#/invoices" data-route="/invoices"><span class="sidebar__icon" data-icon="invoices"></span><span class="sidebar__label" data-i18n="nav.invoices"></span></a></li>
         </ul>
@@ -66,6 +69,8 @@
           <li><a href="#/settings" data-route="/settings"><span class="sidebar__icon" data-icon="settings"></span><span class="sidebar__label" data-i18n="nav.settings"></span></a></li>
         </ul>
       </nav>
+      <!-- Ledi: o personagem ocupa o espaço livre do menu (js/core/mascot.js) -->
+      <div class="sidebar__mascot" id="sidebar-mascot" hidden></div>
       <div class="sidebar__footer">
         <div class="sidebar__profile">
           <span class="sidebar__avatar" id="sidebar-avatar">L</span>
@@ -83,6 +88,8 @@
     </aside>
     <main id="app-main" class="app-main"></main>
   </div>
+  <!-- Ledi: gerador do personagem animado (projeto Personagens), expõe window.Personagem -->
+  <script src="js/vendor/personagem.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
